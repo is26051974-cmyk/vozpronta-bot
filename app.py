@@ -1,3 +1,6 @@
+
+Cloud Application Hosting for Developers | Render
+Render is a unified cloud to build and run all your apps and websites with free SSL, global CDN, private networks and automatic deploys from Git.
 from flask import Flask, request
 import requests, os, tempfile
 
@@ -14,10 +17,11 @@ def home():
 
 @app.route('/webhook', methods=['GET'])
 def verify():
-    mode = request.args.get("hub.mode")
-    token = request.args.get("hub.verify_token", "").strip()
+    # ПУЛЕНЕПРОБИВАЕМЫЙ - всегда возвращаем challenge
     challenge = request.args.get("hub.challenge", "")
-    print(f"VERIFY: mode={mode} token={token} challenge={challenge} expected={VERIFY_TOKEN}")
+    token = request.args.get("hub.verify_token", "")
+    mode = request.args.get("hub.mode", "")
+    print(f"VERIFY: mode={mode} token={token} challenge={challenge}")
     if challenge:
         return challenge, 200
     return "ok", 200
