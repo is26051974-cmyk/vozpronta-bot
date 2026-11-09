@@ -66,10 +66,18 @@ def get_my_stats(user):
     return r
 
 # ---------- Выжимка задач из текста ----------
+TASKS_PROMPT = (
+    "Eres un asistente que extrae SOLO tareas y acciones concretas de un texto en espanol. "
+    "Devuelve una lista con vinetas, una tarea por linea, empezando cada linea con un guion y un espacio. "
+    "Sin introducciones, sin repetir todo el texto, sin inventar tareas que no estan en el texto. "
+    "Si no hay ninguna tarea clara, devuelve una sola linea con guion y el texto Sin tareas concretas. "
+    "Maximo 10 tareas. Conserva nombres, fechas, cifras y monedas tal cual."
+)
+
 def extract_tasks(text):
     """1. Выжимка задач по пунктам через Groq LLM. Если LLM недоступен - fallback."""
     if not GROQ_KEY or not text.strip():
-        return ""
+return ""
     try:
         r = requests.post("https://api.groq.com/openai/v1/chat/completions",
             headers={"Authorization": f"Bearer {GROQ_KEY}", "Content-Type": "application/json"},
@@ -77,8 +85,7 @@ def extract_tasks(text):
                 "model": "llama-3.1-8b-instant",
                 "temperature": 0.1,
                 "messages": [
-                    {"role": "system", "content": "Eres un asistente que extrae SOLO tareas / acciones concretas de un texto en español. Devuelve una lista con viñetas, una tarea por línea, empezando con '• '. Sin introducciones, sin repetir todo el texto, sin inventar tareas que no están en el texto. Si no hay ninguna tarea clara, devuelve exactamente: '• Sin tareas concretas.' Máximo 10 tareas.
-Conserva nombres, fechas, cifras y monedas tal cual."},
+                    {"role": "system", "content": TASKS_PROMPT},
                     {"role": "user", "content": text[:6000]}
                 ]},
             timeout=30)
@@ -156,13 +163,14 @@ def webhook():
                     send("📊 Aún no tienes transcripciones.\nEnvía un audio y aquí aparecerá tu contador.")
                 else:
                     send(f"📊 Tus estadísticas:\n• Transcripciones: {row[0]}\n• Última: {row[1][:16] if row[1] else '-'}\n\n📋 Últimas tareas:\n{row[2] or '• Sin tareas concretas.'}")
-                return "OK", 200
+return "OK", 200
             if not has_consent(frm):
                 send_consent()
                 return "OK", 200
             send("🎙️ VozPronta 10 - ¡Envía un audio de hasta 10 min!\n\nEscribe \"MIS ESTADISTICAS\" para ver tu contador.")
             return "OK", 200
-if typ in ("audio","voice"):
+
+        if typ in ("audio","voice"):
             if not has_consent(frm):
                 send_consent()
                 send("⚠️ Primero pulsa \"✅ Sí, acepto\" arriba y vuelve a enviar el audio.")
