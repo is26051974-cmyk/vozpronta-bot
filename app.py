@@ -7,8 +7,9 @@ PHONE_ID = os.environ.get("PHONE_ID", "1345713805299738")
 TOKEN = os.environ.get("WHATSAPP_TOKEN", "")
 GROQ_KEY = os.environ.get("GROQ_KEY", "")
 VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "vozpronta123")
-# Для ВЕЧНОГО хранения: в Render -> Disks -> Mount Path: /data, тогда DB_PATH=/data/vozpronta.db
-DB_PATH = os.environ.get("DB_PATH", "/data/vozpronta.db" if os.path.isdir("/data") else "vozpronta.db")
+# ВЕЧНОЕ хранение: только если в Render добавлен Disk с Mount Path /data -> тогда в Env поставь DB_PATH=/data/vozpronta.db
+# Без диска - работает локальный файл vozpronta.db, приложение НЕ падает
+DB_PATH = os.environ.get("DB_PATH", "vozpronta.db")
 
 CONSENT_TEXT = (
     "👋 ¡Hola! Soy VozPronta 10.\n\n"
@@ -21,10 +22,24 @@ CONSENT_TEXT = (
 
 # ---------- БАЗА: вечное хранение + счётчик ----------
 def db():
-    conn = sqlite3.connect(DB_PATH)
+    # Если путь из Env (например /data/...) недоступен - падаем обратно на локальный файл, а не роняем весь бот
+    for path in [DB_PATH, "vozpronta.db", "/tmp/vozpronta.db"]:
+        try:
+            d = os.path.dirname(path)
+            if d:
+                os.makedirs(d, exist_ok=True)
+            conn = sqlite3.connect(path, timeout=10)
+            conn.execute("CREATE TABLE IF NOT EXISTS consent (user TEXT PRIMARY KEY, created_at TEXT)")
+            conn.execute("CREATE TABLE IF NOT EXISTS stats (user TEXT PRIMARY KEY, count INTEGER DEFAULT 0, last_at TEXT, last_tasks TEXT)")
+            conn.commit()
+            return conn
+        except Exception as e:
+            print(f"db fallback {path}: {e}")
+            continue
+    # Последний шанс - память, бот продолжит работать без сохранения
+    conn = sqlite3.connect(":memory:")
     conn.execute("CREATE TABLE IF NOT EXISTS consent (user TEXT PRIMARY KEY, created_at TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS stats (user TEXT PRIMARY KEY, count INTEGER DEFAULT 0, last_at TEXT, last_tasks TEXT)")
-    conn.commit()
     return conn
 
 def has_consent(user):
@@ -62,7 +77,8 @@ def extract_tasks(text):
                 "model": "llama-3.1-8b-instant",
                 "temperature": 0.1,
                 "messages": [
-                    {"role": "system", "content": "Eres un asistente que extrae SOLO tareas / acciones concretas de un texto en español. Devuelve una lista con viñetas, una tarea por línea, empezando con '• '. Sin introducciones, sin repetir todo el texto, sin inventar tareas que no están en el texto. Si no hay ninguna tarea clara, devuelve exactamente: '• Sin tareas concretas.' Máximo 10 tareas. Conserva nombres, fechas, cifras y monedas tal cual."},
+                    {"role": "system", "content": "Eres un asistente que extrae SOLO tareas / acciones concretas de un texto en español. Devuelve una lista con viñetas, una tarea por línea, empezando con '• '. Sin introducciones, sin repetir todo el texto, sin inventar tareas que no están en el texto. Si no hay ninguna tarea clara, devuelve exactamente: '• Sin tareas concretas.' Máximo 10 tareas.
+Conserva nombres, fechas, cifras y monedas tal cual."},
                     {"role": "user", "content": text[:6000]}
                 ]},
             timeout=30)
@@ -85,6 +101,7 @@ def verify():
     if challenge:
         return challenge, 200
     return "ok", 200
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
@@ -145,8 +162,7 @@ def webhook():
                 return "OK", 200
             send("🎙️ VozPronta 10 - ¡Envía un audio de hasta 10 min!\n\nEscribe \"MIS ESTADISTICAS\" para ver tu contador.")
             return "OK", 200
-
-        if typ in ("audio","voice"):
+if typ in ("audio","voice"):
             if not has_consent(frm):
                 send_consent()
                 send("⚠️ Primero pulsa \"✅ Sí, acepto\" arriba y vuelve a enviar el audio.")
@@ -158,7 +174,7 @@ def webhook():
                 return "OK", 200
             aud = requests.get(info['url'], headers={"Authorization": f"Bearer {TOKEN}"}).content
             with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tf:
-tf.write(aud); path = tf.name
+                tf.write(aud); path = tf.name
             with open(path, 'rb') as f:
                 r = requests.post("https://api.groq.com/openai/v1/audio/transcriptions",
                                   headers={"Authorization": f"Bearer {GROQ_KEY}"},
