@@ -10,13 +10,18 @@ VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "vozpronta123")
 
 @app.route('/')
 def home():
-    return "VozPronta 10 - Bot is Live! Final"
+    return "VozPronta 10 - Bot is Live!"
 
 @app.route('/webhook', methods=['GET'])
 def verify():
-    # FINAL BULLETPROOF - Facebook требует вернуть hub.challenge как есть
+    # Meta присылает: ?hub.mode=subscribe&hub.verify_token=vozpronta123&hub.challenge=12345
+    # Мы должны просто вернуть hub.challenge как есть
     challenge = request.args.get("hub.challenge")
-    if challenge is not None:
+    token = request.args.get("hub.verify_token")
+    print(f"VERIFY: token={token} challenge={challenge}")
+    if token == VERIFY_TOKEN and challenge:
+        return challenge, 200
+    if challenge:
         return challenge, 200
     return "ok", 200
 
@@ -24,28 +29,26 @@ def verify():
 def webhook():
     try:
         data = request.get_json(force=True, silent=True) or {}
-        entry = data.get('entry', [{}])[0].get('changes', [{}])[0].get('value', {})
-        if 'messages' not in entry:
+        print(f"POST WEBHOOK: {data}", flush=True)
+        val = data.get('entry', [{}])[0].get('changes', [{}])[0].get('value', {})
+        if 'messages' not in val:
             return "OK", 200
-        msg = entry['messages'][0]
-        from_num = msg['from']
-        mtype = msg['type']
-
-        def send(text):
+        m = val['messages'][0]
+        frm = m['from']
+        typ = m['type']
+        def send(t):
             url = f"https://graph.facebook.com/v19.0/{PHONE_ID}/messages"
-            headers = {"Authorization": f"Bearer {TOKEN}"}
-            payload = {"messaging_product":"whatsapp","to":from_num,"text":{"body":text}}
-            requests.post(url, headers=headers, json=payload)
-
-        if mtype == "text":
-            txt = msg['text']['body'].lower()
-            if any(x in txt for x in ["oi","ola","olá","oie"]):
-                send("🎙️ VozPronta 10 - Mande um áudio de até 10 min!")
-
-        if mtype in ("audio","voice"):
-            audio_id = msg['audio']['id']
-            info = requests.get(f"https://graph.facebook.com/v19.0/{audio_id}",
-                                headers={"Authorization": f"Bearer {TOKEN}"}).json()
+            h = {"Authorization": f"Bearer {TOKEN}"}
+            p = {"messaging_product":"whatsapp","to":frm,"text":{"body":t}}
+            r = requests.post(url, headers=h, json=p)
+            print(f"SEND to {frm}: {r.status_code} {r.text[:500]}", flush=True)
+        if typ == "text":
+            txt = m['text']['body']
+            print(f"TEXT from {frm}: {txt}", flush=True)
+            send("🎙️ VozPronta 10 - Mande um áudio de até 10 min!")
+        if typ in ("audio","voice"):
+            aid = m['audio']['id']
+            info = requests.get(f"https://graph.facebook.com/v19.0/{aid}", headers={"Authorization": f"Bearer {TOKEN}"}).json()
             if 'url' not in info:
                 send("❌ Erro ao baixar áudio")
                 return "OK", 200
@@ -62,12 +65,10 @@ def webhook():
             if r.status_code == 200:
                 send(f"✅ Transcrição:\n\n{r.json().get('text','')}")
             else:
-                send(f"❌ Erro: {r.text[:500]}")
+                send(f"❌ Erro: {r.text[:300]}")
     except Exception as e:
-        print(f"Error: {e}")
+        print(e)
     return "OK", 200
-
-
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
