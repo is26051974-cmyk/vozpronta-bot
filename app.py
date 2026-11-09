@@ -45,12 +45,12 @@ def webhook():
         if typ == "text":
             txt = m['text']['body']
             print(f"TEXT from {frm}: {txt}", flush=True)
-            send("🎙️ VozPronta 10 - Mande um áudio de até 10 min!")
+            send("🎙️ VozPronta 10 - ¡Envía un audio de hasta 10 min!")
         if typ in ("audio","voice"):
             aid = m['audio']['id']
             info = requests.get(f"https://graph.facebook.com/v19.0/{aid}", headers={"Authorization": f"Bearer {TOKEN}"}).json()
             if 'url' not in info:
-                send("❌ Erro ao baixar áudio")
+                send("❌ Error al descargar el audio")
                 return "OK", 200
             aud = requests.get(info['url'], headers={"Authorization": f"Bearer {TOKEN}"}).content
             with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tf:
@@ -60,15 +60,19 @@ def webhook():
                 r = requests.post("https://api.groq.com/openai/v1/audio/transcriptions",
                                   headers={"Authorization": f"Bearer {GROQ_KEY}"},
                                   files={"file": f},
-                                  data={"model":"whisper-large-v3","language":"pt"})
+                                  data={"model":"whisper-large-v3","language":"es"})
             os.unlink(path)
             if r.status_code == 200:
-                send(f"✅ Transcrição:\n\n{r.json().get('text','')}")
+                send(f"✅ Transcripción:\n\n{r.json().get('text','')}")
             else:
-                send(f"❌ Erro: {r.text[:300]}")
+                send(f"❌ Error: {r.text[:300]}")
     except Exception as e:
         print(e)
     return "OK", 200
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
