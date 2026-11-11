@@ -1,5 +1,5 @@
 from flask import Flask, request
-import requests, os, tempfile, sqlite3, datetime
+import requests, os, tempfile, sqlite3, datetime, html
 
 app = Flask(__name__)
 
@@ -10,13 +10,29 @@ VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "vozpronta123")
 # ВЕЧНОЕ хранение: только если в Render добавлен Disk с Mount Path /data -> тогда в Env поставь DB_PATH=/data/vozpronta.db
 # Без диска - работает локальный файл vozpronta.db, приложение НЕ падает
 DB_PATH = os.environ.get("DB_PATH", "vozpronta.db")
+# Политика приватности: в Render поставь PUBLIC_URL=https://твой-домен.onrender.com
+# Тогда ссылка в согласии будет правильной. Без Env - по умолчанию наш Render-домен.
+PUBLIC_URL = os.environ.get("PUBLIC_URL", "https://vozpronta-bot.onrender.com").rstrip("/")
+PRIVACY_URL = os.environ.get("PRIVACY_URL", f"{PUBLIC_URL}/privacidad")
+CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "sichgroupinvest@gmail.com")
+# Админка: в Render поставь ADMIN_KEY=свой-сложный-пароль (не VERIFY_TOKEN!)
+# Открывать: https://твой-домен.onrender.com/admin?key=ТВОЙ-ADMIN_KEY
+# Без ADMIN_KEY в Env - админка закрыта (403), чтобы никто чужой не подсмотрел статистику.
+ADMIN_KEY = os.environ.get("ADMIN_KEY", "")
+WHATSAPP_PRIVACY_URL = "https://www.whatsapp.com/legal/privacy-policy"
 
 CONSENT_TEXT = (
-    "👋 ¡Hola! Soy VozPronta 10.\n\n"
-    "Para usar el bot necesito tu consentimiento:\n"
-    "✅ Transcribo tu audio a texto para que puedas leerlo.\n"
-    "🔒 No guardo tus audios, no los comparto con nadie.\n"
-    "🗑️ Puedes retirar tu consentimiento en cualquier momento escribiendo \"NO\".\n\n"
+    "👋 ¡Hola! Soy VozPronta 10, un bot de transcripción.\n\n"
+    "Funciono con la API oficial de WhatsApp (Meta).\n\n"
+    "✅ Transcribo TU audio a texto, solo cuando TÚ me lo envías.\n"
+    "✅ BORRO tu audio justo después de transcribirlo.\n"
+    "❌ NUNCA te escribo primero. Solo respondo a tus mensajes.\n"
+    "❌ NUNCA te pido contraseñas, códigos, tarjetas ni datos bancarios.\n"
+    "❌ NUNCA envío publicidad ni reenvío tus mensajes a nadie.\n\n"
+    "Guardo solo: tu contador y el texto de tu última transcripción.\n"
+    "Puedes borrar todo escribiendo BORRAR, o salir escribiendo NO.\n\n"
+    "Nuestra prioridad es proteger tus datos. Puedes consultar cómo los tratamos en nuestra Política de Privacidad 👉 " + PRIVACY_URL + "\n"
+    "y en la Política de privacidad de WhatsApp 👉 " + WHATSAPP_PRIVACY_URL + "\n\n"
     "¿Aceptas el uso del bot?"
 )
 
@@ -52,6 +68,13 @@ def save_consent(user):
 def remove_consent(user):
     c = db(); c.execute("DELETE FROM consent WHERE user=?", (user,)); c.commit(); c.close()
 
+def delete_all_data(user):
+    # BORRAR: удаляем и согласие, и счётчик, и последние задачи - полностью
+    c = db()
+    c.execute("DELETE FROM consent WHERE user=?", (user,))
+    c.execute("DELETE FROM stats WHERE user=?", (user,))
+    c.commit(); c.close()
+
 def bump_counter(user, tasks_text=""):
     c = db()
     row = c.execute("SELECT count FROM stats WHERE user=?", (user,)).fetchone()
@@ -66,38 +89,175 @@ def get_my_stats(user):
     return r
 
 # ---------- Выжимка задач из текста ----------
+# ---------- Выжимка задач: gpt-oss-120b - качество, gpt-oss-20b - fallback ----------
+TASKS_MODEL_PRIMARY = "openai/gpt-oss-120b"
+TASKS_MODEL_FALLBACK = "openai/gpt-oss-20b"
+
 TASKS_PROMPT = (
     "Eres un asistente que extrae SOLO tareas y acciones concretas de un texto en espanol. "
-    "Devuelve una lista con vinetas, una tarea por linea, empezando cada linea con un guion y un espacio. "
-    "Sin introducciones, sin repetir todo el texto, sin inventar tareas que no estan en el texto. "
-    "Si no hay ninguna tarea clara, devuelve una sola linea con guion y el texto Sin tareas concretas. "
-    "Maximo 10 tareas. Conserva nombres, fechas, cifras y monedas tal cual."
+    "Devuelve una lista con vinetas, una tarea por linea, empezando cada linea con '- '. "
+    "Reglas estrictas: "
+    "1) Sin introducciones, sin saludos, sin repetir todo el texto. "
+    "2) NUNCA inventes tareas, nombres, fechas, cifras o monedas que no esten en el texto. "
+    "3) Conserva nombres, fechas, horas, cifras y monedas TAL CUAL, sin traducir ni redondear. "
+    "4) Cada tarea = verbo en infinitivo + que + cuando/quien, si esta en el texto. "
+    "5) Si es solo una opinion, recuerdo o comentario sin accion, NO es tarea. "
+    "6) Maximo 10 tareas, las mas importantes primero. "
+    "7) Si no hay ninguna tarea clara, devuelve EXACTAMENTE una linea: '- Sin tareas concretas.' "
+    "Ejemplos: "
+    "Texto: 'Mañana tengo que llamar a María a las 10 y comprar pan' -> "
+    "'- Llamar a María mañana a las 10\n- Comprar pan' "
+    "Texto: 'Me gusta mucho el café' -> '- Sin tareas concretas.'"
 )
 
+def _call_tasks_model(model, text):
+    r = requests.post("https://api.groq.com/openai/v1/chat/completions",
+        headers={"Authorization": f"Bearer {GROQ_KEY}", "Content-Type": "application/json"},
+        json={
+            "model": model,
+            "temperature": 0.0,
+            "max_tokens": 600,
+            "messages": [
+                {"role": "system", "content": TASKS_PROMPT},
+                {"role": "user", "content": text[:6000]}
+            ]},
+        timeout=30)
+    print(f"tasks {model}: {r.status_code} {r.text[:500]}", flush=True)
+    if r.status_code != 200:
+        return ""
+    return (r.json().get("choices", [{}])[0].get("message", {}).get("content", "") or "").strip()
+
 def extract_tasks(text):
-    """1. Выжимка задач по пунктам через Groq LLM. Если LLM недоступен - fallback."""
+    """Выжимка задач: сначала gpt-oss-120b (качество), если упал - gpt-oss-20b (fallback)."""
     if not GROQ_KEY or not text.strip():
-        return ""
-    try:
-        r = requests.post("https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {GROQ_KEY}", "Content-Type": "application/json"},
-            json={
-                "model": "llama-3.1-8b-instant",
-                "temperature": 0.1,
-                "messages": [
-                    {"role": "system", "content": TASKS_PROMPT},
-                    {"role": "user", "content": text[:6000]}
-                ]},
-            timeout=30)
-        out = r.json().get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-        return out if out else ""
-    except Exception as e:
-        print(f"tasks error: {e}")
-        return ""
+        return "- Sin tareas concretas."
+    out = ""
+    for model in (TASKS_MODEL_PRIMARY, TASKS_MODEL_FALLBACK):
+        try:
+            out = _call_tasks_model(model, text)
+            if out:
+                break
+        except Exception as e:
+            print(f"tasks error {model}: {e}", flush=True)
+            continue
+    if not out:
+        return "- Sin tareas concretas."
+    # Чистка: оставляем только строки "- ...", максимум 10, без мусора модели
+    lines = []
+    for line in out.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith("- "):
+            lines.append(line)
+        elif len(lines) == 0 and line.lower().startswith("sin tareas"):
+            lines.append("- Sin tareas concretas.")
+    if not lines:
+        return "- Sin tareas concretas."
+    return "\n".join(lines[:10])
 
 @app.route('/')
 def home():
     return "VozPronta 10 - Bot is Live!"
+
+# ---------- Política de Privacidad - для Meta / WhatsApp Business + GDPR ----------
+PRIVACY_HTML = f"""<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Política de Privacidad - VozPronta 10</title>
+<style>body{{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:760px;margin:32px auto;padding:0 16px;line-height:1.6;color:#1a1a1a}}h1{{font-size:28px}}h2{{margin-top:28px}}a{{color:#0b6efd}}code{{background:#f2f2f2;padding:2px 6px;border-radius:4px}}</style>
+</head><body>
+<h1>🔒 Política de Privacidad - VozPronta 10</h1>
+<p><b>Última actualización:</b> 12 de noviembre de 2026</p>
+<p>Nuestra prioridad es proteger tus datos. Esta política explica qué recogemos, para qué, cuánto lo guardamos y cómo puedes borrarlo.</p>
+<h2>1. Quiénes somos</h2>
+<p><b>VozPronta 10</b> es un bot de transcripción de audios de WhatsApp. Funciona con la API oficial de WhatsApp (Meta).</p>
+<p>Contacto: <a href="mailto:{CONTACT_EMAIL}">{CONTACT_EMAIL}</a></p>
+<h2>2. Qué datos recogemos</h2>
+<ul>
+<li><b>Tu número de WhatsApp</b> - solo para responderte. Nunca te escribimos primero.</li>
+<li><b>El texto de tu última transcripción y tus tareas</b> - para mostrarte tu contador y tus últimas tareas con <code>MIS ESTADISTICAS</code>.</li>
+<li><b>Tu contador de transcripciones y fecha de la última</b>.</li>
+<li><b>Tu consentimiento</b> - fecha en la que pulsaste “Sí, acepto”.</li>
+</ul>
+<h2>3. Qué datos NO recogemos y NO guardamos</h2>
+<ul>
+<li><b>NO guardamos tus audios.</b> Tu audio se borra justo después de transcribirlo.</li>
+<li>NO pedimos contraseñas, códigos, tarjetas ni datos bancarios.</li>
+<li>NO enviamos publicidad ni reenviamos tus mensajes a nadie.</li>
+<li>NO vendemos tus datos.</li>
+</ul>
+<h2>4. Quién procesa tu audio</h2>
+<p>Para transcribir usamos la API oficial de WhatsApp (Meta) y el servicio de transcripción Groq (Whisper) y de extracción de tareas Groq (gpt-oss). Tu audio se envía a Groq solo para transcribirlo y no se guarda después.</p>
+<p>También se aplica la <a href="{WHATSAPP_PRIVACY_URL}">Política de privacidad de WhatsApp</a>.</p>
+<h2>5. Cuánto guardamos tus datos</h2>
+<p>Guardamos solo tu contador y el texto de tu última transcripción, hasta que tú pidas borrarlos. Tus audios no se guardan nunca.</p>
+<h2>6. Tus derechos - cómo borrar todo</h2>
+<ul>
+<li>Escribe <code>BORRAR</code> en el chat - borramos TODO: consentimiento, contador y últimas tareas.</li>
+<li>Escribe <code>NO</code> - retiramos tu consentimiento y ya no procesamos tus audios.</li>
+<li>Escribe <code>PRIVACIDAD</code> - te enviamos esta política.</li>
+<li>También puedes escribirnos a <a href="mailto:{CONTACT_EMAIL}">{CONTACT_EMAIL}</a>.</li>
+</ul>
+<h2>7. Menores</h2>
+<p>El bot no está dirigido a menores de 16 años.</p>
+<h2>8. Cambios</h2>
+<p>Si cambiamos esta política, publicaremos la nueva versión en esta misma página.</p>
+<p><a href="/">← Volver a VozPronta 10</a></p>
+</body></html>"""
+
+@app.route('/privacidad')
+@app.route('/politica-privacidad')
+def privacidad():
+    return PRIVACY_HTML, 200, {"Content-Type": "text/html; charset=utf-8"}
+
+# ---------- Админка: только для тебя, по ADMIN_KEY ----------
+def _mask_phone(user):
+    # Показываем только последние 4 цифры, полный номер не светим даже в админке
+    u = str(user or "")
+    return "****" + u[-4:] if len(u) > 4 else "****"
+
+@app.route('/admin')
+def admin():
+    key = request.args.get("key", "")
+    if not ADMIN_KEY or key != ADMIN_KEY:
+        return "403 - Acceso denegado. Falta ADMIN_KEY o clave incorrecta.", 403
+    try:
+        c = db()
+        total_consent = c.execute("SELECT COUNT(*) FROM consent").fetchone()[0]
+        row = c.execute("SELECT COUNT(*), COALESCE(SUM(count),0) FROM stats").fetchone()
+        total_users, total_trans = row[0], row[1]
+        today = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+        today_users = c.execute("SELECT COUNT(*) FROM stats WHERE last_at LIKE ?", (today + "%",)).fetchone()[0]
+        users = c.execute("SELECT user, count, last_at, last_tasks FROM stats ORDER BY last_at DESC LIMIT 50").fetchall()
+        c.close()
+    except Exception as e:
+        return f"Error admin: {e}", 500
+    rows_html = ""
+    for u, cnt, last_at, last_tasks in users:
+        rows_html += (
+            f"<tr><td>{html.escape(_mask_phone(u))}</td>"
+            f"<td>{cnt}</td>"
+            f"<td>{html.escape(str(last_at or '-'))}</td>"
+            f"<td>{html.escape((last_tasks or '-')[:300])}</td></tr>"
+        )
+    if not rows_html:
+        rows_html = "<tr><td colspan='4'>Aún no hay transcripciones.</td></tr>"
+    return f"""<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin - VozPronta 10</title>
+<style>body{{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:1000px;margin:24px auto;padding:0 16px;line-height:1.5}}table{{width:100%;border-collapse:collapse}}th,td{{border:1px solid #ddd;padding:8px;text-align:left;vertical-align:top}}th{{background:#f2f2f2}}.cards{{display:flex;gap:12px;flex-wrap:wrap}}.card{{border:1px solid #ddd;border-radius:10px;padding:14px 18px;min-width:160px}}.card b{{font-size:28px;display:block}}small{{color:#666}}</style>
+</head><body>
+<h1>📊 VozPronta 10 - Admin</h1>
+<p><small>Teléfonos enmascarados (**** + últimas 4 cifras). No compartas esta URL con tu clave.</small></p>
+<div class="cards">
+<div class="card"><b>{total_consent}</b>Con consentimiento</div>
+<div class="card"><b>{total_users}</b>Usuarios con transcripciones</div>
+<div class="card"><b>{total_trans}</b>Transcripciones totales</div>
+<div class="card"><b>{today_users}</b>Activos hoy (UTC)</div>
+</div>
+<h2>Últimos 50 usuarios</h2>
+<table><tr><th>Usuario</th><th>Transcripciones</th><th>Última</th><th>Últimas tareas</th></tr>{rows_html}</table>
+<p><a href="/privacidad">Política de Privacidad</a> · <a href="/">Inicio</a></p>
+</body></html>""", 200, {"Content-Type": "text/html; charset=utf-8"}
 
 @app.route('/webhook', methods=['GET'])
 def verify():
@@ -152,9 +312,16 @@ def webhook():
             txt = m['text']['body'].strip()
             print(f"TEXT from {frm}: {txt}", flush=True)
             up = txt.upper()
+            if up in ("BORRAR", "BORRAR MIS DATOS", "ELIMINAR MIS DATOS", "DELETE"):
+                delete_all_data(frm)
+                send("🗑️ Listo. Borré TODO: tu consentimiento, tu contador y tus últimas tareas.\nNo guardo nada tuyo.\nSi quieres volver, escribe \"Hola\".")
+                return "OK", 200
+            if up in ("PRIVACIDAD", "PRIVACY", "SEGURIDAD", "¿ES SEGURO?", "ES SEGURO"):
+                send(f"🔒 Privacidad VozPronta 10:\n\nNuestra prioridad es proteger tus datos.\n\n• Uso la API oficial de WhatsApp (Meta).\n• Solo respondo cuando TÚ me escribes. Nunca te escribo primero.\n• Tu audio se borra justo después de transcribirlo.\n• Nunca pido contraseñas, códigos ni tarjetas.\n• Nunca envío publicidad.\n• Para borrar todo escribe BORRAR, para salir escribe NO.\n\n📄 Nuestra Política de Privacidad: {PRIVACY_URL}\n📄 Política de WhatsApp: {WHATSAPP_PRIVACY_URL}")
+                return "OK", 200
             if up in ("NO", "NO ACEPTO", "STOP", "BAJA"):
                 remove_consent(frm)
-                send("❌ Consentimiento retirado. Ya no procesaré tus audios. Escribe \"Hola\" para volver a aceptar.")
+                send("❌ Consentimiento retirado. Ya no procesaré tus audios.\nTus datos se pueden borrar por completo escribiendo BORRAR.\nEscribe \"Hola\" para volver a aceptar.")
                 return "OK", 200
             # 3. Счётчик - команда клиента
             if up in ("MIS ESTADISTICAS", "MIS ESTADÍSTICAS", "ESTADISTICAS", "ESTADÍSTICAS", "MI CONTADOR", "STATS"):
@@ -196,8 +363,7 @@ def webhook():
                 # 3. Счётчик
                 n = bump_counter(frm, tasks)
                 msg = f"✅ Transcripción:\n\n{text}"
-                if tasks:
-                    msg += f"\n\n📋 Tareas:\n{tasks}"
+                msg += f"\n\n📋 Tareas:\n{tasks or '- Sin tareas concretas.'}"
                 msg += f"\n\n📊 Esta es tu transcripción #{n}."
                 send(msg[:3900])
             else:
