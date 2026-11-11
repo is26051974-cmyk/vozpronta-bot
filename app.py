@@ -10,6 +10,12 @@ VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "vozpronta123")
 # ВЕЧНОЕ хранение: только если в Render добавлен Disk с Mount Path /data -> тогда в Env поставь DB_PATH=/data/vozpronta.db
 # Без диска - работает локальный файл vozpronta.db, приложение НЕ падает
 DB_PATH = os.environ.get("DB_PATH", "vozpronta.db")
+# Turso (бесплатная вечная база, вместо диска в Render):
+# В Render добавь: TURSO_DATABASE_URL=libsql://твоя-база-xxx.turso.io
+#                  TURSO_AUTH_TOKEN=твой-токен
+# Без них - работает как раньше, на локальном vozpronta.db
+TURSO_DATABASE_URL = os.environ.get("TURSO_DATABASE_URL", "").strip()
+TURSO_AUTH_TOKEN = os.environ.get("TURSO_AUTH_TOKEN", "").strip()
 # Политика приватности: в Render поставь PUBLIC_URL=https://твой-домен.onrender.com
 # Тогда ссылка в согласии будет правильной. Без Env - по умолчанию наш Render-домен.
 PUBLIC_URL = os.environ.get("PUBLIC_URL", "https://vozpronta-bot.onrender.com").rstrip("/")
@@ -36,9 +42,63 @@ CONSENT_TEXT = (
     "¿Aceptas el uso del bot?"
 )
 
-# ---------- БАЗА: вечное хранение + счётчик ----------
-def db():
-    # Если путь из Env (например /data/...) недоступен - падаем обратно на локальный файл, а не роняем весь бот
+# ---------- БАЗА: Turso (вечная) + fallback на локальный SQLite ----------
+def _turso_http_url():
+    u = TURSO_DATABASE_URL.strip()
+    if u.startswith("libsql://"):
+        u = "https://" + u[len("libsql://"):]
+    return u.rstrip("/") + "/v2/pipeline"
+
+def _turso_arg(v):
+    if v is None:
+        return {"type": "null"}
+    if isinstance(v, bool):
+        return {"type": "integer", "value": "1" if v else "0"}
+    if isinstance(v, int):
+        return {"type": "integer", "value": str(v)}
+    if isinstance(v, float):
+        return {"type": "float", "value": v}
+    return {"type": "text", "value": str(v)}
+
+def _turso_query(sql, params=()):
+    """Один запрос в Turso через HTTP. Возвращает список кортежей (строк)."""
+    if not TURSO_DATABASE_URL or not TURSO_AUTH_TOKEN:
+        raise RuntimeError("Turso not configured")
+    payload = {"requests": [
+        {"type": "execute", "stmt": {"sql": sql, "args": [_turso_arg(v) for v in params]}},
+        {"type": "close"},
+    ]}
+    r = requests.post(_turso_http_url(),
+        headers={"Authorization": f"Bearer {TURSO_AUTH_TOKEN}", "Content-Type": "application/json"},
+        json=payload, timeout=10)
+    if r.status_code != 200:
+        raise RuntimeError(f"Turso {r.status_code}: {r.text[:300]}")
+    data = r.json()
+    for res in data.get("results", []):
+        if res.get("type") == "error":
+            raise RuntimeError(f"Turso error: {res.get('error', {})}")
+        if res.get("type") == "ok":
+            result = res.get("response", {}).get("result", {})
+            cols = [c["name"] for c in result.get("cols", [])]
+            rows = []
+            for row in result.get("rows", []):
+                vals = []
+                for cell in row:
+                    if cell is None:
+                        vals.append(None)
+                    elif isinstance(cell, dict):
+                        vals.append(cell.get("value"))
+                    else:
+                        vals.append(cell)
+                rows.append(tuple(vals))
+            return rows
+    return []
+
+def _turso_init():
+    _turso_query("CREATE TABLE IF NOT EXISTS consent (user TEXT PRIMARY KEY, created_at TEXT)")
+    _turso_query("CREATE TABLE IF NOT EXISTS stats (user TEXT PRIMARY KEY, count INTEGER DEFAULT 0, last_at TEXT, last_tasks TEXT)")
+
+def _sqlite_conn():
     for path in [DB_PATH, "vozpronta.db", "/tmp/vozpronta.db"]:
         try:
             d = os.path.dirname(path)
@@ -52,41 +112,86 @@ def db():
         except Exception as e:
             print(f"db fallback {path}: {e}")
             continue
-    # Последний шанс - память, бот продолжит работать без сохранения
     conn = sqlite3.connect(":memory:")
     conn.execute("CREATE TABLE IF NOT EXISTS consent (user TEXT PRIMARY KEY, created_at TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS stats (user TEXT PRIMARY KEY, count INTEGER DEFAULT 0, last_at TEXT, last_tasks TEXT)")
     return conn
 
+def db_query(sql, params=(), fetch="all"):
+    """Единый запрос: сначала Turso, если он настроен. Если Turso упал - локальный SQLite.
+    Возвращает: fetch='one' -> одна строка или None, fetch='all' -> список строк, fetch='none' -> None."""
+    # Turso - основной
+    if TURSO_DATABASE_URL and TURSO_AUTH_TOKEN:
+        try:
+            _turso_init()
+            rows = _turso_query(sql, params)
+            if fetch == "one":
+                return rows[0] if rows else None
+            if fetch == "none":
+                return None
+            return rows
+        except Exception as e:
+            print(f"Turso failed, fallback to sqlite: {e}", flush=True)
+    # Fallback - локальный SQLite, бот НЕ падает
+    try:
+        c = _sqlite_conn()
+        cur = c.execute(sql, params)
+        if fetch == "one":
+            row = cur.fetchone()
+        elif fetch == "none":
+            row = None
+        else:
+            row = cur.fetchall()
+        c.commit()
+        c.close()
+        return row
+    except Exception as e:
+        print(f"sqlite fallback failed: {e}", flush=True)
+        if fetch == "one":
+            return None
+        if fetch == "none":
+            return None
+        return []
+
+# Совместимость: старый код вызывал db().execute() - теперь это обёртка
+class _DbCompat:
+    def execute(self, sql, params=()):
+        rows = db_query(sql, params, fetch="all")
+        class _Cur:
+            def __init__(self, rows): self._rows = rows
+            def fetchone(self): return self._rows[0] if self._rows else None
+            def fetchall(self): return self._rows
+        return _Cur(rows)
+    def commit(self): pass
+    def close(self): pass
+
+def db():
+    return _DbCompat()
+
 def has_consent(user):
-    c = db(); r = c.execute("SELECT 1 FROM consent WHERE user=?", (user,)).fetchone(); c.close()
+    r = db_query("SELECT 1 FROM consent WHERE user=?", (user,), fetch="one")
     return bool(r)
 
 def save_consent(user):
-    c = db(); c.execute("INSERT OR REPLACE INTO consent VALUES (?,?)", (user, datetime.datetime.utcnow().isoformat())); c.commit(); c.close()
+    db_query("INSERT OR REPLACE INTO consent VALUES (?,?)", (user, datetime.datetime.utcnow().isoformat()), fetch="none")
 
 def remove_consent(user):
-    c = db(); c.execute("DELETE FROM consent WHERE user=?", (user,)); c.commit(); c.close()
+    db_query("DELETE FROM consent WHERE user=?", (user,), fetch="none")
 
 def delete_all_data(user):
     # BORRAR: удаляем и согласие, и счётчик, и последние задачи - полностью
-    c = db()
-    c.execute("DELETE FROM consent WHERE user=?", (user,))
-    c.execute("DELETE FROM stats WHERE user=?", (user,))
-    c.commit(); c.close()
+    db_query("DELETE FROM consent WHERE user=?", (user,), fetch="none")
+    db_query("DELETE FROM stats WHERE user=?", (user,), fetch="none")
 
 def bump_counter(user, tasks_text=""):
-    c = db()
-    row = c.execute("SELECT count FROM stats WHERE user=?", (user,)).fetchone()
+    row = db_query("SELECT count FROM stats WHERE user=?", (user,), fetch="one")
     n = (row[0] if row else 0) + 1
-    c.execute("INSERT INTO stats VALUES (?,?,?,?) ON CONFLICT(user) DO UPDATE SET count=excluded.count, last_at=excluded.last_at, last_tasks=excluded.last_tasks",
-              (user, n, datetime.datetime.utcnow().isoformat(), tasks_text[:2000]))
-    c.commit(); c.close()
+    db_query("INSERT INTO stats VALUES (?,?,?,?) ON CONFLICT(user) DO UPDATE SET count=excluded.count, last_at=excluded.last_at, last_tasks=excluded.last_tasks",
+              (user, n, datetime.datetime.utcnow().isoformat(), tasks_text[:2000]), fetch="none")
     return n
 
 def get_my_stats(user):
-    c = db(); r = c.execute("SELECT count, last_at, last_tasks FROM stats WHERE user=?", (user,)).fetchone(); c.close()
-    return r
+    return db_query("SELECT count, last_at, last_tasks FROM stats WHERE user=?", (user,), fetch="one")
 
 # ---------- Выжимка задач из текста ----------
 # ---------- Выжимка задач: gpt-oss-120b - качество, gpt-oss-20b - fallback ----------
@@ -222,14 +327,12 @@ def admin():
     if not ADMIN_KEY or key != ADMIN_KEY:
         return "403 - Acceso denegado. Falta ADMIN_KEY o clave incorrecta.", 403
     try:
-        c = db()
-        total_consent = c.execute("SELECT COUNT(*) FROM consent").fetchone()[0]
-        row = c.execute("SELECT COUNT(*), COALESCE(SUM(count),0) FROM stats").fetchone()
+        total_consent = (db_query("SELECT COUNT(*) FROM consent", fetch="one") or [0])[0]
+        row = db_query("SELECT COUNT(*), COALESCE(SUM(count),0) FROM stats", fetch="one") or [0, 0]
         total_users, total_trans = row[0], row[1]
         today = datetime.datetime.utcnow().strftime("%Y-%m-%d")
-        today_users = c.execute("SELECT COUNT(*) FROM stats WHERE last_at LIKE ?", (today + "%",)).fetchone()[0]
-        users = c.execute("SELECT user, count, last_at, last_tasks FROM stats ORDER BY last_at DESC LIMIT 50").fetchall()
-        c.close()
+        today_users = (db_query("SELECT COUNT(*) FROM stats WHERE last_at LIKE ?", (today + "%",), fetch="one") or [0])[0]
+        users = db_query("SELECT user, count, last_at, last_tasks FROM stats ORDER BY last_at DESC LIMIT 50")
     except Exception as e:
         return f"Error admin: {e}", 500
     rows_html = ""
