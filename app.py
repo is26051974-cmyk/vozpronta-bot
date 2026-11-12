@@ -32,10 +32,11 @@ CONSENT_TEXT = (
     "Funciono con la API oficial de WhatsApp (Meta).\n\n"
     "✅ Transcribo TU audio a texto, solo cuando TÚ me lo envías.\n"
     "✅ BORRO tu audio justo después de transcribirlo.\n"
-    "❌ NUNCA te escribo primero. Solo respondo a tus mensajes.\n"
+    "⏰ Solo te escribo yo primero en UN caso: si TÚ mismo me pediste un recordatorio (por ejemplo, en tu audio dijiste \"mañana llamar a Juan\"). Te recuerdo solo esa tarea, nada más.\n"
+    "❌ NUNCA te envío publicidad. Puedes apagar los recordatorios escribiendo SIN RECORDATORIOS.\n"
     "❌ NUNCA te pido contraseñas, códigos, tarjetas ni datos bancarios.\n"
     "❌ NUNCA envío publicidad ni reenvío tus mensajes a nadie.\n\n"
-    "Guardo solo: tu contador y el texto de tu última transcripción.\n"
+    "Guardo: tu contador, tu historial de transcripciones y tareas, tus recordatorios con fecha y tus favoritos (si los guardas con ⭐).\n"
     "Puedes borrar todo escribiendo BORRAR, o salir escribiendo NO.\n\n"
     "Nuestra prioridad es proteger tus datos. Puedes consultar cómo los tratamos en nuestra Política de Privacidad 👉 " + PRIVACY_URL + "\n"
     "y en la Política de privacidad de WhatsApp 👉 " + WHATSAPP_PRIVACY_URL + "\n\n"
@@ -97,6 +98,10 @@ def _turso_query(sql, params=()):
 def _turso_init():
     _turso_query("CREATE TABLE IF NOT EXISTS consent (user TEXT PRIMARY KEY, created_at TEXT)")
     _turso_query("CREATE TABLE IF NOT EXISTS stats (user TEXT PRIMARY KEY, count INTEGER DEFAULT 0, last_at TEXT, last_tasks TEXT)")
+    _turso_query("CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, user TEXT, created_at TEXT, text TEXT, tasks TEXT)")
+    _turso_query("CREATE TABLE IF NOT EXISTS reminders (id INTEGER PRIMARY KEY AUTOINCREMENT, user TEXT, due_date TEXT, task TEXT, sent INTEGER DEFAULT 0)")
+    _turso_query("CREATE TABLE IF NOT EXISTS favorites (id INTEGER PRIMARY KEY AUTOINCREMENT, user TEXT, created_at TEXT, text TEXT, tasks TEXT)")
+    _turso_query("CREATE TABLE IF NOT EXISTS prefs (user TEXT PRIMARY KEY, reminders_on INTEGER DEFAULT 1)")
 
 def _sqlite_conn():
     for path in [DB_PATH, "vozpronta.db", "/tmp/vozpronta.db"]:
@@ -107,6 +112,10 @@ def _sqlite_conn():
             conn = sqlite3.connect(path, timeout=10)
             conn.execute("CREATE TABLE IF NOT EXISTS consent (user TEXT PRIMARY KEY, created_at TEXT)")
             conn.execute("CREATE TABLE IF NOT EXISTS stats (user TEXT PRIMARY KEY, count INTEGER DEFAULT 0, last_at TEXT, last_tasks TEXT)")
+            conn.execute("CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, user TEXT, created_at TEXT, text TEXT, tasks TEXT)")
+            conn.execute("CREATE TABLE IF NOT EXISTS reminders (id INTEGER PRIMARY KEY AUTOINCREMENT, user TEXT, due_date TEXT, task TEXT, sent INTEGER DEFAULT 0)")
+            conn.execute("CREATE TABLE IF NOT EXISTS favorites (id INTEGER PRIMARY KEY AUTOINCREMENT, user TEXT, created_at TEXT, text TEXT, tasks TEXT)")
+            conn.execute("CREATE TABLE IF NOT EXISTS prefs (user TEXT PRIMARY KEY, reminders_on INTEGER DEFAULT 1)")
             conn.commit()
             return conn
         except Exception as e:
@@ -182,6 +191,10 @@ def delete_all_data(user):
     # BORRAR: удаляем и согласие, и счётчик, и последние задачи - полностью
     db_query("DELETE FROM consent WHERE user=?", (user,), fetch="none")
     db_query("DELETE FROM stats WHERE user=?", (user,), fetch="none")
+    db_query("DELETE FROM history WHERE user=?", (user,), fetch="none")
+    db_query("DELETE FROM reminders WHERE user=?", (user,), fetch="none")
+    db_query("DELETE FROM favorites WHERE user=?", (user,), fetch="none")
+    db_query("DELETE FROM prefs WHERE user=?", (user,), fetch="none")
 
 def bump_counter(user, tasks_text=""):
     row = db_query("SELECT count FROM stats WHERE user=?", (user,), fetch="one")
@@ -193,13 +206,92 @@ def bump_counter(user, tasks_text=""):
 def get_my_stats(user):
     return db_query("SELECT count, last_at, last_tasks FROM stats WHERE user=?", (user,), fetch="one")
 
+
+# ---------- TOP-3: напоминания + монеты + resumen + BUSCAR + favoritos ----------
+import re as _re
+DAY_NAMES = {"lunes":0,"martes":1,"miércoles":2,"miercoles":2,"jueves":3,"viernes":4,"sábado":5,"sabado":5,"domingo":6,
+             "segunda":0,"terça":1,"terca":1,"quarta":2,"quinta":3,"sexta":4,"sábado":5,"monday":0,"tuesday":1,"wednesday":2,"thursday":3,"friday":4,"saturday":5,"sunday":6}
+def _next_weekday(target, base):
+    delta = (target - base.weekday()) % 7
+    if delta == 0: delta = 7
+    return base + datetime.timedelta(days=delta)
+def parse_reminders(tasks_text, base_dt=None):
+    """Ищет в задачах mañana / hoy / el lunes / 25 de noviembre и т.д. Возвращает [(due_date YYYY-MM-DD, task)]"""
+    base = base_dt or datetime.datetime.utcnow()
+    out = []
+    for line in (tasks_text or "").splitlines():
+        t = line.strip().lstrip("- ").strip()
+        if not t or "sin tareas" in t.lower(): continue
+        low = t.lower()
+        due = None
+        if "mañana" in low or "manana" in low or "amanhã" in low or "amanha" in low or "tomorrow" in low:
+            due = (base + datetime.timedelta(days=1)).date()
+        elif "hoy" in low or "hoje" in low or "today" in low:
+            due = base.date()
+        elif "pasado mañana" in low or "pasado manana" in low:
+            due = (base + datetime.timedelta(days=2)).date()
+        else:
+            m = _re.search(r"(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)", low)
+            months = {"enero":1,"febrero":2,"marzo":3,"abril":4,"mayo":5,"junio":6,"julio":7,"agosto":8,"septiembre":9,"octubre":10,"noviembre":11,"diciembre":12}
+            if m:
+                try:
+                    y = base.year
+                    d = datetime.date(y, months[m.group(2)], int(m.group(1)))
+                    if d < base.date(): d = datetime.date(y+1, months[m.group(2)], int(m.group(1)))
+                    due = d
+                except Exception: pass
+            if not due:
+                for name, wd in DAY_NAMES.items():
+                    if _re.search(r"\b(el\s+)?"+name+r"\b", low):
+                        due = _next_weekday(wd, base).date(); break
+        if due: out.append((due.isoformat(), t))
+    return out
+def save_history(user, text, tasks):
+    db_query("INSERT INTO history (user, created_at, text, tasks) VALUES (?,?,?,?)", (user, datetime.datetime.utcnow().isoformat(), (text or "")[:4000], (tasks or "")[:2000]), fetch="none")
+    for due, task in parse_reminders(tasks):
+        db_query("INSERT INTO reminders (user, due_date, task, sent) VALUES (?,?,?,0)", (user, due, task), fetch="none")
+def get_today_reminders(user):
+    today = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+    return db_query("SELECT task FROM reminders WHERE user=? AND due_date=? AND sent=0", (user, today))
+def mark_reminders_sent(user, today):
+    db_query("UPDATE reminders SET sent=1 WHERE user=? AND due_date=?", (user, today), fetch="none")
+def get_resumen(user):
+    today = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+    rows = db_query("SELECT text, tasks FROM history WHERE user=? AND created_at LIKE ?", (user, today+"%"))
+    if not rows: return ""
+    lines = []
+    for text, tasks in rows:
+        for line in (tasks or "").splitlines():
+            line=line.strip()
+            if line and "sin tareas" not in line.lower() and line not in lines: lines.append(line)
+    if not lines: return "Hoy no tienes tareas concretas. 🎉"
+    return "\n".join(lines)
+def search_history(user, q):
+    rows = db_query("SELECT created_at, tasks FROM history WHERE user=? ORDER BY id DESC LIMIT 50", (user,))
+    hits=[]
+    for created_at, tasks in rows or []:
+        if q.lower() in (tasks or "").lower():
+            hits.append(f"• {str(created_at)[:10]}: {(tasks or '').replace(chr(10),' | ')[:220]}")
+    return hits[:10]
+def save_favorite(user):
+    row = db_query("SELECT text, tasks FROM history WHERE user=? ORDER BY id DESC LIMIT 1", (user,), fetch="one")
+    if not row: return False
+    db_query("INSERT INTO favorites (user, created_at, text, tasks) VALUES (?,?,?,?)", (user, datetime.datetime.utcnow().isoformat(), row[0], row[1]), fetch="none")
+    return True
+def reminders_enabled(user):
+    r = db_query("SELECT reminders_on FROM prefs WHERE user=?", (user,), fetch="one")
+    return True if not r else bool(r[0])
+def set_reminders(user, on):
+    db_query("INSERT INTO prefs VALUES (?,?) ON CONFLICT(user) DO UPDATE SET reminders_on=excluded.reminders_on", (user, 1 if on else 0), fetch="none")
+def get_favorites(user):
+    return db_query("SELECT created_at, tasks FROM favorites WHERE user=? ORDER BY id DESC LIMIT 10", (user,))
 # ---------- Выжимка задач из текста ----------
 # ---------- Выжимка задач: gpt-oss-120b - качество, gpt-oss-20b - fallback ----------
 TASKS_MODEL_PRIMARY = "openai/gpt-oss-120b"
 TASKS_MODEL_FALLBACK = "openai/gpt-oss-20b"
 
 TASKS_PROMPT = (
-    "Eres un asistente que extrae SOLO tareas y acciones concretas de un texto en espanol. "
+    "Eres un asistente que extrae SOLO tareas y acciones concretas. Responde SIEMPRE en el mismo idioma del texto (español / portugués / inglés). "
     "Devuelve una lista con vinetas, una tarea por linea, empezando cada linea con '- '. "
     "Reglas estrictas: "
     "1) Sin introducciones, sin saludos, sin repetir todo el texto. "
@@ -272,15 +364,16 @@ PRIVACY_HTML = f"""<!DOCTYPE html>
 <style>body{{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:760px;margin:32px auto;padding:0 16px;line-height:1.6;color:#1a1a1a}}h1{{font-size:28px}}h2{{margin-top:28px}}a{{color:#0b6efd}}code{{background:#f2f2f2;padding:2px 6px;border-radius:4px}}</style>
 </head><body>
 <h1>🔒 Política de Privacidad - VozPronta 10</h1>
-<p><b>Última actualización:</b> 12 de noviembre de 2026</p>
+<p><b>Última actualización:</b> 11 de noviembre de 2026 - actualizada: recordatorios, resumen, búsqueda y favoritos</p>
 <p>Nuestra prioridad es proteger tus datos. Esta política explica qué recogemos, para qué, cuánto lo guardamos y cómo puedes borrarlo.</p>
 <h2>1. Quiénes somos</h2>
 <p><b>VozPronta 10</b> es un bot de transcripción de audios de WhatsApp. Funciona con la API oficial de WhatsApp (Meta).</p>
 <p>Contacto: <a href="mailto:{CONTACT_EMAIL}">{CONTACT_EMAIL}</a></p>
 <h2>2. Qué datos recogemos</h2>
 <ul>
-<li><b>Tu número de WhatsApp</b> - solo para responderte. Nunca te escribimos primero.</li>
-<li><b>El texto de tu última transcripción y tus tareas</b> - para mostrarte tu contador y tus últimas tareas con <code>MIS ESTADISTICAS</code>.</li>
+<li><b>Tu número de WhatsApp</b> - para responderte y, solo si tú lo pediste, para enviarte tus recordatorios.</li>
+<li><b>El texto de tus transcripciones y tus tareas</b> - para mostrarte tu contador, <code>MIS ESTADISTICAS</code>, <code>RESUMEN</code>, <code>BUSCAR</code> y tus favoritos.</li>
+<li><b>Tus recordatorios con fecha</b> - solo los que TÚ creaste al decir una fecha en tu audio (por ejemplo, “mañana”, “el lunes”).</li>
 <li><b>Tu contador de transcripciones y fecha de la última</b>.</li>
 <li><b>Tu consentimiento</b> - fecha en la que pulsaste “Sí, acepto”.</li>
 </ul>
@@ -289,17 +382,22 @@ PRIVACY_HTML = f"""<!DOCTYPE html>
 <li><b>NO guardamos tus audios.</b> Tu audio se borra justo después de transcribirlo.</li>
 <li>NO pedimos contraseñas, códigos, tarjetas ni datos bancarios.</li>
 <li>NO enviamos publicidad ni reenviamos tus mensajes a nadie.</li>
+<li>NO te escribimos primero para publicidad ni para ofrecerte nada. La única excepción son tus propios recordatorios.</li>
 <li>NO vendemos tus datos.</li>
 </ul>
 <h2>4. Quién procesa tu audio</h2>
 <p>Para transcribir usamos la API oficial de WhatsApp (Meta) y el servicio de transcripción Groq (Whisper) y de extracción de tareas Groq (gpt-oss). Tu audio se envía a Groq solo para transcribirlo y no se guarda después.</p>
 <p>También se aplica la <a href="{WHATSAPP_PRIVACY_URL}">Política de privacidad de WhatsApp</a>.</p>
 <h2>5. Cuánto guardamos tus datos</h2>
-<p>Guardamos solo tu contador y el texto de tu última transcripción, hasta que tú pidas borrarlos. Tus audios no se guardan nunca.</p>
+<p>Guardamos tu contador, tu historial de transcripciones y tareas, tus recordatorios y tus favoritos, hasta que tú pidas borrarlos. Tus audios no se guardan nunca.</p>
+<h2>5b. Recordatorios - cómo funcionan y cómo apagarlos</h2>
+<p>Si en tu audio dices una fecha (“mañana”, “el lunes”, “25 de noviembre”), guardamos esa tarea con esa fecha y ese día te enviamos un solo mensaje: “⏰ Hoy tienes: ...”.</p>
+<p>Para apagarlos, escribe <code>SIN RECORDATORIOS</code>. Para volver a activarlos, escribe <code>CON RECORDATORIOS</code>. Para borrar TODO, escribe <code>BORRAR</code>.</p>
 <h2>6. Tus derechos - cómo borrar todo</h2>
 <ul>
 <li>Escribe <code>BORRAR</code> en el chat - borramos TODO: consentimiento, contador y últimas tareas.</li>
 <li>Escribe <code>NO</code> - retiramos tu consentimiento y ya no procesamos tus audios.</li>
+<li>Escribe <code>SIN RECORDATORIOS</code> - dejamos de enviarte recordatorios, pero seguimos transcribiendo cuando tú nos escribes.</li>
 <li>Escribe <code>PRIVACIDAD</code> - te enviamos esta política.</li>
 <li>También puedes escribirnos a <a href="mailto:{CONTACT_EMAIL}">{CONTACT_EMAIL}</a>.</li>
 </ul>
@@ -362,7 +460,27 @@ def admin():
 <p><a href="/privacidad">Política de Privacidad</a> · <a href="/">Inicio</a></p>
 </body></html>""", 200, {"Content-Type": "text/html; charset=utf-8"}
 
+
+@app.route('/cron-reminders')
+def cron_reminders():
+    key = request.args.get("key", "")
+    if not ADMIN_KEY or key != ADMIN_KEY: return "403", 403
+    today = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+    rows = db_query("SELECT DISTINCT user FROM reminders WHERE due_date=? AND sent=0", (today,))
+    sent = 0
+    for (user,) in rows or []:
+        if not reminders_enabled(user): continue
+        tasks = get_today_reminders(user)
+        if not tasks: continue
+        if not has_consent(user): continue
+        msg = "⏰ Hoy tienes:\n" + "\n".join(f"- {t}" for t in tasks)
+        r = requests.post(f"https://graph.facebook.com/v19.0/{PHONE_ID}/messages", headers={"Authorization": f"Bearer {TOKEN}"}, json={"messaging_product":"whatsapp","to":user,"text":{"body":msg[:3900]}})
+        print(f"REMINDER to {user}: {r.status_code}", flush=True)
+        if r.status_code in (200,201): mark_reminders_sent(user, today); sent += 1
+    return f"OK sent={sent}", 200
+
 @app.route('/webhook', methods=['GET'])
+
 def verify():
     challenge = request.args.get("hub.challenge")
     token = request.args.get("hub.verify_token")
@@ -420,11 +538,45 @@ def webhook():
                 send("🗑️ Listo. Borré TODO: tu consentimiento, tu contador y tus últimas tareas.\nNo guardo nada tuyo.\nSi quieres volver, escribe \"Hola\".")
                 return "OK", 200
             if up in ("PRIVACIDAD", "PRIVACY", "SEGURIDAD", "¿ES SEGURO?", "ES SEGURO"):
-                send(f"🔒 Privacidad VozPronta 10:\n\nNuestra prioridad es proteger tus datos.\n\n• Uso la API oficial de WhatsApp (Meta).\n• Solo respondo cuando TÚ me escribes. Nunca te escribo primero.\n• Tu audio se borra justo después de transcribirlo.\n• Nunca pido contraseñas, códigos ni tarjetas.\n• Nunca envío publicidad.\n• Para borrar todo escribe BORRAR, para salir escribe NO.\n\n📄 Nuestra Política de Privacidad: {PRIVACY_URL}\n📄 Política de WhatsApp: {WHATSAPP_PRIVACY_URL}")
+                send(f"🔒 Privacidad VozPronta 10:\n\nNuestra prioridad es proteger tus datos.\n\n• Uso la API oficial de WhatsApp (Meta).\n• Solo te escribo yo primero para tus propios recordatorios con fecha que TÚ me pediste. Apágalos con SIN RECORDATORIOS.\n• Tu audio se borra justo después de transcribirlo.\n• Nunca pido contraseñas, códigos ni tarjetas.\n• Nunca envío publicidad.\n• Para borrar todo escribe BORRAR, para salir escribe NO.\n\n📄 Nuestra Política de Privacidad: {PRIVACY_URL}\n📄 Política de WhatsApp: {WHATSAPP_PRIVACY_URL}")
                 return "OK", 200
             if up in ("NO", "NO ACEPTO", "STOP", "BAJA"):
                 remove_consent(frm)
                 send("❌ Consentimiento retirado. Ya no procesaré tus audios.\nTus datos se pueden borrar por completo escribiendo BORRAR.\nEscribe \"Hola\" para volver a aceptar.")
+                return "OK", 200
+            # ⏰ Напоминания на сегодня - при каждом сообщении клиента проверяем, есть ли задачи на сегодня
+            _today = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+            _due = get_today_reminders(frm) if reminders_enabled(frm) else []
+            if _due:
+                send("⏰ Hoy tienes:\n" + "\n".join(f"- {t}" for t in _due))
+                mark_reminders_sent(frm, _today)
+            if up in ("SIN RECORDATORIOS", "NO RECORDATORIOS", "APAGAR RECORDATORIOS", "SIN AVISOS"):
+                set_reminders(frm, False)
+                send("🔕 Recordatorios apagados. Ya no te escribiré yo primero.\nTus tareas siguen guardadas. Para activarlos de nuevo escribe CON RECORDATORIOS.")
+                return "OK", 200
+            if up in ("CON RECORDATORIOS", "ACTIVAR RECORDATORIOS", "RECORDATORIOS ON"):
+                set_reminders(frm, True)
+                send("🔔 Recordatorios activados. Te avisaré solo de las tareas con fecha que TÚ me pidas.")
+                return "OK", 200
+            if up.startswith("BUSCAR ") or up.startswith("BUSCA "):
+                q = txt.split(" ",1)[1].strip() if " " in txt else ""
+                hits = search_history(frm, q) if q else []
+                send("🔎 Resultados para '" + q + "':\n" + ("\n".join(hits) if hits else "No encontré nada con esa palabra."))
+                return "OK", 200
+            if up in ("HOY", "MIS TAREAS", "TAREAS DE HOY", "HOY TENGO"):
+                _rem = db_query("SELECT task FROM reminders WHERE user=? AND due_date=?", (frm, _today))
+                send("⏰ Hoy tienes:\n" + ("\n".join(f"- {t[0]}" for t in _rem) if _rem else "Hoy no tienes tareas. 🎉"))
+                return "OK", 200
+            if up in ("RESUMEN", "RESUMEN DEL DIA", "RESUMEN DEL DÍA", "RESUMEN DE HOY", "PDF", "RESUMO"):
+                send("📄 Resumen del día:\n" + get_resumen(frm))
+                return "OK", 200
+            if up in ("FAVORITO", "⭐", "FAVORITOS", "MIS FAVORITOS"):
+                if up == "FAVORITO" or up == "⭐":
+                    ok = save_favorite(frm)
+                    send("⭐ Guardado en favoritos." if ok else "⭐ Aún no tienes transcripciones para guardar.")
+                else:
+                    favs = get_favorites(frm)
+                    send("⭐ Favoritos:\n" + ("\n".join(f"• {str(c)[:10]}: {(t or '').replace(chr(10),' | ')[:200]}" for c,t in favs) if favs else "Aún no tienes favoritos. Escribe FAVORITO después de una transcripción importante."))
                 return "OK", 200
             # 3. Счётчик - команда клиента
             if up in ("MIS ESTADISTICAS", "MIS ESTADÍSTICAS", "ESTADISTICAS", "ESTADÍSTICAS", "MI CONTADOR", "STATS"):
@@ -437,7 +589,7 @@ def webhook():
             if not has_consent(frm):
                 send_consent()
                 return "OK", 200
-            send("🎙️ VozPronta 10 - ¡Envía un audio de hasta 10 min!\n\nEscribe \"MIS ESTADISTICAS\" para ver tu contador.")
+            send("🎙️ VozPronta 10 - ¡Envía un audio de hasta 10 min!\n\n⏰ HOY - tareas de hoy  •  📄 RESUMEN - resumen del día  •  🔎 BUSCAR Juan  •  ⭐ FAVORITO")
             return "OK", 200
 
         if typ in ("audio","voice"):
@@ -451,26 +603,40 @@ def webhook():
                 send("❌ Error al descargar el audio")
                 return "OK", 200
             aud = requests.get(info['url'], headers={"Authorization": f"Bearer {TOKEN}"}).content
+            print(f"AUDIO download: {len(aud)} bytes", flush=True)
             with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tf:
                 tf.write(aud); path = tf.name
             with open(path, 'rb') as f:
                 r = requests.post("https://api.groq.com/openai/v1/audio/transcriptions",
                                   headers={"Authorization": f"Bearer {GROQ_KEY}"},
                                   files={"file": f},
-                                  data={"model":"whisper-large-v3","language":"es"})
+                                  data={"model":"whisper-large-v3"})
             os.unlink(path)
+            print(f"GROQ whisper: {r.status_code} {r.text[:300]}", flush=True)
             if r.status_code == 200:
                 text = r.json().get('text','')
-                # 1. Выжимка задач
-                tasks = extract_tasks(text)
-                # 3. Счётчик
-                n = bump_counter(frm, tasks)
+                # Задачи и база НЕ должны убивать отправку транскрипции - каждую в свой try
+                try:
+                    tasks = extract_tasks(text)
+                except Exception as e:
+                    print(f"tasks failed, continue without tasks: {e}", flush=True)
+                    tasks = "- Sin tareas concretas."
+                try:
+                    save_history(frm, text, tasks)
+                except Exception as e:
+                    print(f"save_history failed, continue: {e}", flush=True)
+                try:
+                    n = bump_counter(frm, tasks)
+                except Exception as e:
+                    print(f"bump_counter failed, continue: {e}", flush=True)
+                    n = 0
                 msg = f"✅ Transcripción:\n\n{text}"
                 msg += f"\n\n📋 Tareas:\n{tasks or '- Sin tareas concretas.'}"
-                msg += f"\n\n📊 Esta es tu transcripción #{n}."
+                if n:
+                    msg += f"\n\n📊 Esta es tu transcripción #{n}."
                 send(msg[:3900])
             else:
-                send(f"❌ Error: {r.text[:300]}")
+                send(f"❌ Error transcripción (Groq {r.status_code}): {r.text[:300]}")
     except Exception as e:
         print(e)
     return "OK", 200
