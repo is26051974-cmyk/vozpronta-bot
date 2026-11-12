@@ -511,9 +511,12 @@ def webhook():
         def send(t):
             return send_payload({"messaging_product":"whatsapp","to":frm,"text":{"body":t}})
         def send_consent():
+            # FIX 131009: interactive body у Meta максимум 1024 символа, а CONSENT_TEXT ~1300.
+            # Поэтому полный текст шлём обычным сообщением, а кнопки - отдельным коротким interactive.
+            send(CONSENT_TEXT)
             return send_payload({
                 "messaging_product": "whatsapp", "to": frm, "type": "interactive",
-                "interactive": {"type": "button", "body": {"text": CONSENT_TEXT},
+                "interactive": {"type": "button", "body": {"text": "👋 Soy VozPronta 10. Transcribo tu audio a texto y borro el audio después. ¿Aceptas el uso del bot?"},
                     "action": {"buttons": [
                         {"type": "reply", "reply": {"id": "consent_accept", "title": "✅ Sí, acepto"}},
                         {"type": "reply", "reply": {"id": "consent_decline", "title": "❌ No acepto"}}]}}
