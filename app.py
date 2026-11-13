@@ -354,7 +354,7 @@ def webhook():
                 r = requests.post("https://api.groq.com/openai/v1/audio/transcriptions",
                                   headers={"Authorization": f"Bearer {GROQ_KEY}"},
                                   files={"file": f},
-                                  data={"model":"whisper-large-v3"))
+                                  data={"model":"whisper-large-v3"})
             os.unlink(path)
             if r.status_code == 200:
                 text = r.json().get('text','')
