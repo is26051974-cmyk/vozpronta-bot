@@ -295,20 +295,27 @@ def webhook():
             print(f"TEXT from {frm}: {txt}", flush=True)
             up = txt.upper()
 
+            PENDING = globals().setdefault("PENDING_BORRAR", {})
+
             if up in ("BORRAR", "BORRAR MIS DATOS", "ELIMINAR MIS DATOS", "DELETE"):
+                PENDING[frm] = "menu"
                 send("¿Qué quieres borrar?\n\n1. Escribe BORRAR CHAT - solo borro este chat\n2. Escribe BORRAR TODO - borro TODO\n\nEscribe 1 o 2, o CANCELAR")
                 return "OK", 200
-            if up in ("BORRAR CHAT", "1"):
+            if up == "BORRAR CHAT" or (up == "1" and PENDING.get(frm) == "menu"):
+                PENDING.pop(frm, None)
                 send("Listo. Borré solo este chat. Tu contador y tus días gratis siguen intactos.")
                 return "OK", 200
-            if up in ("BORRAR TODO", "2"):
+            if up == "BORRAR TODO" or (up == "2" and PENDING.get(frm) == "menu"):
+                PENDING[frm] = "confirm_todo"
                 send("¿Seguro? Si borras TODO perderás tu contador y tu periodo gratis. Escribe SI BORRAR TODO para confirmar, o CANCELAR para dejarlo.")
                 return "OK", 200
-            if up == "SI BORRAR TODO":
+            if up == "SI BORRAR TODO" and PENDING.get(frm) == "confirm_todo":
+                PENDING.pop(frm, None)
                 delete_all_data(frm)
                 send("Listo. Borré TODO: tu consentimiento, tu contador y tus últimas tareas.")
                 return "OK", 200
             if up == "CANCELAR":
+                PENDING.pop(frm, None)
                 send("Ok, no borré nada. Todo sigue como estaba.")
                 return "OK", 200
             if up in ("NO", "NO ACEPTO", "STOP", "BAJA"):
