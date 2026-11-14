@@ -1,8 +1,6 @@
 from flask import Flask, request
 import requests, os, tempfile, sqlite3, datetime, html
 
-app = Flask(__name__)
-
 PHONE_ID = os.environ.get("PHONE_ID", "1345713805299738")
 TOKEN = os.environ.get("WHATSAPP_TOKEN", "")
 GROQ_KEY = os.environ.get("GROQ_KEY", "")
@@ -314,11 +312,22 @@ def webhook():
             up = txt.upper()
             if up in ("BORRAR", "BORRAR MIS DATOS", "ELIMINAR MIS DATOS", "DELETE"):
                 delete_all_data(frm)
-                send("🗑️ Listo. Borré TODO: tu consentimiento, tu contador y tus últimas tareas.\nNo guardo nada tuyo.\nSi quieres volver, escribe \"Hola\".")
-                return "OK", 200
-            if up in ("PRIVACIDAD", "PRIVACY", "SEGURIDAD", "¿ES SEGURO?", "ES SEGURO"):
-                send(f"🔒 Privacidad VozPronta 10:\n\nNuestra prioridad es proteger tus datos.\n\n• Uso la API oficial de WhatsApp (Meta).\n• Solo respondo cuando TÚ me escribes. Nunca te escribo primero.\n• Tu audio se borra justo después de transcribirlo.\n• Nunca pido contraseñas, códigos ni tarjetas.\n• Nunca envío publicidad.\n• Para borrar todo escribe BORRAR, para salir escribe NO.\n\n📄 Nuestra Política de Privacidad: {PRIVACY_URL}\n📄 Política de WhatsApp: {WHATSAPP_PRIVACY_URL}")
-                return "OK", 200
+               if up in ("BORRAR", "BORRAR MIS DATOS", "ELIMINAR MIS DATOS", "DELETE"):
+    send("¿Qué quieres borrar?\n\n1️⃣ Escribe BORRAR CHAT - solo borro este chat, tu contador queda\n2️⃣ Escribe BORRAR TODO - borro TODO, contador y tareas\n\nEscribe 1 o 2, o escribe CANCELAR para no borrar nada")
+    return "OK", 200
+if up in ("BORRAR CHAT", "1"):
+    send("Listo. Borré solo este chat. Tu contador y tus días gratis siguen intactos.")
+    return "OK", 200
+if up in ("BORRAR TODO", "2"):
+    send("¿Seguro? Si borras TODO perderás tu contador y tu periodo gratis. Escribe SI BORRAR TODO para confirmar, o CANCELAR para dejarlo.")
+    return "OK", 200
+if up == "SI BORRAR TODO":
+    delete_all_data(frm)
+    send("🗑️ Listo. Borré TODO: tu consentimiento, tu contador y tus últimas tareas.\nNo guardo nada tuyo.\nSi quieres volver, escribe 'Hola'.")
+    return "OK", 200
+if up == "CANCELAR":
+    send("Ok, no borré nada. Todo sigue como estaba.")
+    return "OK", 200
             if up in ("NO", "NO ACEPTO", "STOP", "BAJA"):
                 remove_consent(frm)
                 send("❌ Consentimiento retirado. Ya no procesaré tus audios.\nTus datos se pueden borrar por completo escribiendo BORRAR.\nEscribe \"Hola\" para volver a aceptar.")
