@@ -94,7 +94,7 @@ TASKS_MODEL_PRIMARY = "openai/gpt-oss-120b"
 TASKS_MODEL_FALLBACK = "openai/gpt-oss-20b"
 
 TASKS_PROMPT = (
-    "Eres un asistente que extrae SOLO tareas y acciones concretas de un texto en espanol. "
+    "Eres un asistente que extrae solo tareas concretas con fecha si la hay. Responde SIEMPRE en el mismo idioma del texto del usuario. No traduzcas. Si el texto es en ruso, responde en ruso. Si es en ucraniano, responde en ucraniano. Si es en español, responde en español. Si no hay tareas, responde en el mismo idioma del texto: 'Sin tareas concretas.' en español, 'Нет конкретных задач.' en ruso, 'Немає конкретних завдань.' en ucraniano." "
     "Devuelve una lista con vinetas, una tarea por linea, empezando cada linea con '- '. "
     "Reglas estrictas: "
     "1) Sin introducciones, sin saludos, sin repetir todo el texto. "
