@@ -310,23 +310,23 @@ def webhook():
             txt = m['text']['body'].strip()
             print(f"TEXT from {frm}: {txt}", flush=True)
             up = txt.upper()
-            if up in ("BORRAR", "BORRAR MIS DATOS", "ELIMINAR MIS DATOS", "DELETE"):
-                delete_all_data(frm)
-               if up in ("BORRAR", "BORRAR MIS DATOS", "ELIMINAR MIS DATOS", "DELETE"):
-    send("¿Qué quieres borrar?\n\n1️⃣ Escribe BORRAR CHAT - solo borro este chat, tu contador queda\n2️⃣ Escribe BORRAR TODO - borro TODO, contador y tareas\n\nEscribe 1 o 2, o escribe CANCELAR para no borrar nada")
-    return "OK", 200
-if up in ("BORRAR CHAT", "1"):
-    send("Listo. Borré solo este chat. Tu contador y tus días gratis siguen intactos.")
-    return "OK", 200
-if up in ("BORRAR TODO", "2"):
-    send("¿Seguro? Si borras TODO perderás tu contador y tu periodo gratis. Escribe SI BORRAR TODO para confirmar, o CANCELAR para dejarlo.")
-    return "OK", 200
-if up == "SI BORRAR TODO":
-    delete_all_data(frm)
-    send("🗑️ Listo. Borré TODO: tu consentimiento, tu contador y tus últimas tareas.\nNo guardo nada tuyo.\nSi quieres volver, escribe 'Hola'.")
-    return "OK", 200
-if up == "CANCELAR":
-    send("Ok, no borré nada. Todo sigue como estaba.")
+           
+        if up in ("BORRAR", "BORRAR MIS DATOS", "ELIMINAR MIS DATOS", "DELETE"):
+            send("¿Qué quieres borrar?\n\n1. Escribe BORRAR CHAT - solo borro este chat\n2. Escribe BORRAR TODO - borro TODO\n\nEscribe 1 o 2, o CANCELAR")
+            return "OK", 200
+        if up in ("BORRAR CHAT", "1"):
+            send("Listo. Borré solo este chat. Tu contador y tus días gratis siguen intactos.")
+            return "OK", 200
+        if up in ("BORRAR TODO", "2"):
+            send("¿Seguro? Si borras TODO perderás tu contador y tu periodo gratis. Escribe SI BORRAR TODO para confirmar, o CANCELAR para dejarlo.")
+            return "OK", 200
+        if up == "SI BORRAR TODO":
+            delete_all_data(frm)
+            send("Listo. Borré TODO: tu consentimiento, tu contador y tus últimas tareas.")
+            return "OK", 200
+        if up == "CANCELAR":
+            send("Ok, no borré nada. Todo sigue como estaba.")
+            return "OK", 200
     return "OK", 200
             if up in ("NO", "NO ACEPTO", "STOP", "BAJA"):
                 remove_consent(frm)
