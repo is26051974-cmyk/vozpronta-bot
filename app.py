@@ -1,21 +1,16 @@
 from flask import Flask, request
 import requests, os, tempfile, sqlite3, datetime, html
 
+app = Flask(__name__)
+
 PHONE_ID = os.environ.get("PHONE_ID", "1345713805299738")
 TOKEN = os.environ.get("WHATSAPP_TOKEN", "")
 GROQ_KEY = os.environ.get("GROQ_KEY", "")
 VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "vozpronta123")
-# ВЕЧНОЕ хранение: только если в Render добавлен Disk с Mount Path /data -> тогда в Env поставь DB_PATH=/data/vozpronta.db
-# Без диска - работает локальный файл vozpronta.db, приложение НЕ падает
 DB_PATH = os.environ.get("DB_PATH", "vozpronta.db")
-# Политика приватности: в Render поставь PUBLIC_URL=https://твой-домен.onrender.com
-# Тогда ссылка в согласии будет правильной. Без Env - по умолчанию наш Render-домен.
 PUBLIC_URL = os.environ.get("PUBLIC_URL", "https://vozpronta-bot.onrender.com").rstrip("/")
 PRIVACY_URL = os.environ.get("PRIVACY_URL", f"{PUBLIC_URL}/privacidad")
 CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "sichgroupinvest@gmail.com")
-# Админка: в Render поставь ADMIN_KEY=свой-сложный-пароль (не VERIFY_TOKEN!)
-# Открывать: https://твой-домен.onrender.com/admin?key=ТВОЙ-ADMIN_KEY
-# Без ADMIN_KEY в Env - админка закрыта (403), чтобы никто чужой не подсмотрел статистику.
 ADMIN_KEY = os.environ.get("ADMIN_KEY", "")
 WHATSAPP_PRIVACY_URL = "https://www.whatsapp.com/legal/privacy-policy"
 
@@ -34,9 +29,7 @@ CONSENT_TEXT = (
     "¿Aceptas el uso del bot?"
 )
 
-# ---------- БАЗА: вечное хранение + счётчик ----------
 def db():
-    # Если путь из Env (например /data/...) недоступен - падаем обратно на локальный файл, а не роняем весь бот
     for path in [DB_PATH, "vozpronta.db", "/tmp/vozpronta.db"]:
         try:
             d = os.path.dirname(path)
@@ -50,7 +43,6 @@ def db():
         except Exception as e:
             print(f"db fallback {path}: {e}")
             continue
-    # Последний шанс - память, бот продолжит работать без сохранения
     conn = sqlite3.connect(":memory:")
     conn.execute("CREATE TABLE IF NOT EXISTS consent (user TEXT PRIMARY KEY, created_at TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS stats (user TEXT PRIMARY KEY, count INTEGER DEFAULT 0, last_at TEXT, last_tasks TEXT)")
@@ -67,7 +59,6 @@ def remove_consent(user):
     c = db(); c.execute("DELETE FROM consent WHERE user=?", (user,)); c.commit(); c.close()
 
 def delete_all_data(user):
-    # BORRAR: удаляем и согласие, и счётчик, и последние задачи - полностью
     c = db()
     c.execute("DELETE FROM consent WHERE user=?", (user,))
     c.execute("DELETE FROM stats WHERE user=?", (user,))
@@ -86,13 +77,11 @@ def get_my_stats(user):
     c = db(); r = c.execute("SELECT count, last_at, last_tasks FROM stats WHERE user=?", (user,)).fetchone(); c.close()
     return r
 
-# ---------- Выжимка задач из текста ----------
-# ---------- Выжимка задач: gpt-oss-120b - качество, gpt-oss-20b - fallback ----------
 TASKS_MODEL_PRIMARY = "openai/gpt-oss-120b"
 TASKS_MODEL_FALLBACK = "openai/gpt-oss-20b"
 
 TASKS_PROMPT = (
-    "Eres un asistente que extrae solo tareas concretas con fecha si la hay. Responde SIEMPRE en el mismo idioma del texto del usuario. No traduzcas. Si el texto es en ruso, responde en ruso. Si es en ucraniano, responde en ucraniano. Si es en español, responde en español. Si no hay tareas, responde en el mismo idioma del texto: 'Sin tareas concretas.' en español, 'Нет конкретных задач.' en ruso, 'Немає конкретних завдань.' en ucraniano." 
+    "Eres un asistente que extrae solo tareas concretas con fecha si la hay. Responde SIEMPRE en el mismo idioma del texto del usuario. No traduzcas. Si el texto es en ruso, responde en ruso. Si es en ucraniano, responde en ucraniano. Si es en español, responde en español. Si no hay tareas, responde en el mismo idioma del texto: 'Sin tareas concretas.' en español, 'Нет конкретных задач.' en ruso, 'Немає конкретних завдань.' en ucraniano."
     "Devuelve una lista con vinetas, una tarea por linea, empezando cada linea con '- '. "
     "Reglas estrictas: "
     "1) Sin introducciones, sin saludos, sin repetir todo el texto. "
@@ -126,7 +115,6 @@ def _call_tasks_model(model, text):
     return (r.json().get("choices", [{}])[0].get("message", {}).get("content", "") or "").strip()
 
 def extract_tasks(text):
-    """Выжимка задач: сначала gpt-oss-120b (качество), если упал - gpt-oss-20b (fallback)."""
     if not GROQ_KEY or not text.strip():
         return "- Sin tareas concretas."
     out = ""
@@ -140,7 +128,6 @@ def extract_tasks(text):
             continue
     if not out:
         return "- Sin tareas concretas."
-    # Чистка: оставляем только строки "- ...", максимум 10, без мусора модели
     lines = []
     for line in out.splitlines():
         line = line.strip()
@@ -158,7 +145,6 @@ def extract_tasks(text):
 def home():
     return "VozPronta 10 - Bot is Live!"
 
-# ---------- Política de Privacidad - для Meta / WhatsApp Business + GDPR ----------
 PRIVACY_HTML = f"""<!DOCTYPE html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Política de Privacidad - VozPronta 10</title>
@@ -208,9 +194,7 @@ PRIVACY_HTML = f"""<!DOCTYPE html>
 def privacidad():
     return PRIVACY_HTML, 200, {"Content-Type": "text/html; charset=utf-8"}
 
-# ---------- Админка: только для тебя, по ADMIN_KEY ----------
 def _mask_phone(user):
-    # Показываем только последние 4 цифры, полный номер не светим даже в админке
     u = str(user or "")
     return "****" + u[-4:] if len(u) > 4 else "****"
 
@@ -286,7 +270,7 @@ def webhook():
             print(f"SEND to {frm}: {r.status_code} {r.text[:500]}", flush=True)
             return r
         def send(t):
-            return send_payload({"messaging_product":"whatsapp","to":frm,"text":{"body":t}})
+            return send_payload({"messaging_product": "whatsapp", "to": frm, "text": {"body": t}})
         def send_consent():
             return send_payload({
                 "messaging_product": "whatsapp", "to": frm, "type": "interactive",
@@ -300,7 +284,7 @@ def webhook():
             btn_id = m.get('interactive', {}).get('button_reply', {}).get('id', '')
             if btn_id == "consent_accept":
                 save_consent(frm)
-                send("✅ ¡Gracias! Consentimiento aceptado.\n\n🎙️ Ahora envía un audio de hasta 10 min y te lo transcribo.")
+                send("✅ ¡Gracias! Consentimiento aceptado.\n\n🎙 Ahora envía un audio de hasta 10 min y te lo transcribo.")
             elif btn_id == "consent_decline":
                 remove_consent(frm)
                 send("❌ Entendido. No usaré el bot contigo.\nSi cambias de opinión, escribe \"Hola\" y vuelve a aceptar.")
@@ -310,29 +294,27 @@ def webhook():
             txt = m['text']['body'].strip()
             print(f"TEXT from {frm}: {txt}", flush=True)
             up = txt.upper()
-           
-        if up in ("BORRAR", "BORRAR MIS DATOS", "ELIMINAR MIS DATOS", "DELETE"):
-            send("¿Qué quieres borrar?\n\n1. Escribe BORRAR CHAT - solo borro este chat\n2. Escribe BORRAR TODO - borro TODO\n\nEscribe 1 o 2, o CANCELAR")
-            return "OK", 200
-        if up in ("BORRAR CHAT", "1"):
-            send("Listo. Borré solo este chat. Tu contador y tus días gratis siguen intactos.")
-            return "OK", 200
-        if up in ("BORRAR TODO", "2"):
-            send("¿Seguro? Si borras TODO perderás tu contador y tu periodo gratis. Escribe SI BORRAR TODO para confirmar, o CANCELAR para dejarlo.")
-            return "OK", 200
-        if up == "SI BORRAR TODO":
-            delete_all_data(frm)
-            send("Listo. Borré TODO: tu consentimiento, tu contador y tus últimas tareas.")
-            return "OK", 200
-        if up == "CANCELAR":
-            send("Ok, no borré nada. Todo sigue como estaba.")
-            return "OK", 200
-    return "OK", 200
+
+            if up in ("BORRAR", "BORRAR MIS DATOS", "ELIMINAR MIS DATOS", "DELETE"):
+                send("¿Qué quieres borrar?\n\n1. Escribe BORRAR CHAT - solo borro este chat\n2. Escribe BORRAR TODO - borro TODO\n\nEscribe 1 o 2, o CANCELAR")
+                return "OK", 200
+            if up in ("BORRAR CHAT", "1"):
+                send("Listo. Borré solo este chat. Tu contador y tus días gratis siguen intactos.")
+                return "OK", 200
+            if up in ("BORRAR TODO", "2"):
+                send("¿Seguro? Si borras TODO perderás tu contador y tu periodo gratis. Escribe SI BORRAR TODO para confirmar, o CANCELAR para dejarlo.")
+                return "OK", 200
+            if up == "SI BORRAR TODO":
+                delete_all_data(frm)
+                send("Listo. Borré TODO: tu consentimiento, tu contador y tus últimas tareas.")
+                return "OK", 200
+            if up == "CANCELAR":
+                send("Ok, no borré nada. Todo sigue como estaba.")
+                return "OK", 200
             if up in ("NO", "NO ACEPTO", "STOP", "BAJA"):
                 remove_consent(frm)
                 send("❌ Consentimiento retirado. Ya no procesaré tus audios.\nTus datos se pueden borrar por completo escribiendo BORRAR.\nEscribe \"Hola\" para volver a aceptar.")
                 return "OK", 200
-            # 3. Счётчик - команда клиента
             if up in ("MIS ESTADISTICAS", "MIS ESTADÍSTICAS", "ESTADISTICAS", "ESTADÍSTICAS", "MI CONTADOR", "STATS"):
                 row = get_my_stats(frm)
                 if not row:
@@ -343,13 +325,13 @@ def webhook():
             if not has_consent(frm):
                 send_consent()
                 return "OK", 200
-            send("🎙️ VozPronta 10 - ¡Envía un audio de hasta 10 min!\n\nEscribe \"MIS ESTADISTICAS\" para ver tu contador.")
+            send("🎙 VozPronta 10 - ¡Envía un audio de hasta 10 min!\n\nEscribe \"MIS ESTADISTICAS\" para ver tu contador.")
             return "OK", 200
 
-        if typ in ("audio","voice"):
+        if typ in ("audio", "voice"):
             if not has_consent(frm):
                 send_consent()
-                send("⚠️ Primero pulsa \"✅ Sí, acepto\" arriba y vuelve a enviar el audio.")
+                send("⚠ Primero pulsa \"✅ Sí, acepto\" arriba y vuelve a enviar el audio.")
                 return "OK", 200
             aid = m['audio']['id']
             info = requests.get(f"https://graph.facebook.com/v19.0/{aid}", headers={"Authorization": f"Bearer {TOKEN}"}).json()
@@ -363,13 +345,11 @@ def webhook():
                 r = requests.post("https://api.groq.com/openai/v1/audio/transcriptions",
                                   headers={"Authorization": f"Bearer {GROQ_KEY}"},
                                   files={"file": f},
-                                  data={"model":"whisper-large-v3"})
+                                  data={"model": "whisper-large-v3"})
             os.unlink(path)
             if r.status_code == 200:
-                text = r.json().get('text','')
-                # 1. Выжимка задач
+                text = r.json().get('text', '')
                 tasks = extract_tasks(text)
-                # 3. Счётчик
                 n = bump_counter(frm, tasks)
                 msg = f"✅ Transcripción:\n\n{text}"
                 msg += f"\n\n📋 Tareas:\n{tasks or '- Sin tareas concretas.'}"
