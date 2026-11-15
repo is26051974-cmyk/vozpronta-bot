@@ -388,7 +388,7 @@ def webhook():
                 return "OK", 200
             send("🎙 VozPronta 10 - ¡Envía un audio de hasta 10 min!\n\nEscribe \"MIS ESTADISTICAS\" para ver tu contador.")
             return "OK", 200
-if typ in ("audio", "voice"):
+            if typ in ("audio", "voice"):
     if not has_consent(frm):
                 send_consent()
                 send("⚠ Primero pulsa \"✅ Sí, acepto\" arriba y vuelve a enviar el audio.")
