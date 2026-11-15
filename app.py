@@ -82,7 +82,45 @@ def bump_counter(user, tasks_text=""):
 def get_my_stats(user):
     c = db(); r = c.execute("SELECT count, last_at, last_tasks FROM stats WHERE user=?", (user,)).fetchone(); c.close()
     return r
+LIMIT_MSG = (
+    "⛔ Has llegado a tu límite gratuito de 5 transcripciones hoy.\n\n"
+    "Tu semana gratuita ya terminó.\n"
+    "Muy pronto podrás seguir con Bizum, tarjeta o Google Pay.\n\n"
+    "Vuelve mañana para tus 5 gratuitas. 🙏"
+)
 
+def check_limit(user):
+    """Возвращает (allowed: bool, trial_days_left: int, daily_count: int)"""
+    c = db()
+    now = datetime.datetime.now(ZoneInfo("Europe/Madrid"))
+    today = now.strftime("%Y-%m-%d")
+    row = c.execute("SELECT first_seen, daily_date, daily_count FROM stats WHERE user=?", (user,)).fetchone()
+    if not row or not row[0]:
+        # Первый раз - создаём first_seen
+        c.execute("INSERT INTO stats (user, count, first_seen, daily_date, daily_count) VALUES (?,?,?, ?,?) ON CONFLICT(user) DO UPDATE SET first_seen=excluded.first_seen, daily_date=excluded.daily_date, daily_count=excluded.daily_count",
+                  (user, 0, now.isoformat(), today, 0))
+        c.commit(); c.close()
+        return (True, 7, 0)
+    first_seen = datetime.datetime.fromisoformat(row[0])
+    # Если first_seen был без таймзоны - считаем что это Мадрид
+    if first_seen.tzinfo is None:
+        first_seen = first_seen.replace(tzinfo=ZoneInfo("Europe/Madrid"))
+    days_passed = (now - first_seen).days
+    trial_left = max(0, 7 - days_passed)
+    daily_date = row[1]
+    daily_count = row[2] or 0
+    # Новый день по Мадриду - обнуляем
+    if daily_date != today:
+        c.execute("UPDATE stats SET daily_date=?, daily_count=0 WHERE user=?", (today, user))
+        c.commit()
+        daily_count = 0
+    c.close()
+    if days_passed < 7:
+        return (True, trial_left, daily_count)
+    # После недели - лимит 5 в день
+    if daily_count >= 5:
+        return (False, 0, daily_count)
+    return (True, 0, daily_count)
 TASKS_MODEL_PRIMARY = "openai/gpt-oss-120b"
 TASKS_MODEL_FALLBACK = "openai/gpt-oss-20b"
 
