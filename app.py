@@ -379,10 +379,13 @@ def webhook():
             send("🎙 VozPronta 10 - ¡Envía un audio de hasta 10 min!\n\nEscribe \"MIS ESTADISTICAS\" para ver tu contador.")
             return "OK", 200
 
-        if typ in ("audio", "voice"):
-            if not has_consent(frm):
+                    if not has_consent(frm):
                 send_consent()
                 send("⚠ Primero pulsa \"✅ Sí, acepto\" arriba y vuelve a enviar el audio.")
+                return "OK", 200
+            allowed, trial_left, daily_n = check_limit(frm)
+            if not allowed:
+                send(LIMIT_MSG)
                 return "OK", 200
             aid = m['audio']['id']
             info = requests.get(f"https://graph.facebook.com/v19.0/{aid}", headers={"Authorization": f"Bearer {TOKEN}"}).json()
