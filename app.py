@@ -53,7 +53,7 @@ def has_consent(user):
     return bool(r)
 
 def save_consent(user):
-    c = db(); c.execute("INSERT OR REPLACE INTO consent VALUES (?,?)", (user, datetime.datetime.now(ZoneInfo("Europe/Madrid")).isoformat()
+        c = db(); c.execute("INSERT OR REPLACE INTO consent VALUES (?,?)", (user, datetime.datetime.now(ZoneInfo("Europe/Madrid")).isoformat())); c.commit(); c.close()
 
 def remove_consent(user):
     c = db(); c.execute("DELETE FROM consent WHERE user=?", (user,)); c.commit(); c.close()
@@ -69,7 +69,7 @@ def bump_counter(user, tasks_text=""):
     row = c.execute("SELECT count FROM stats WHERE user=?", (user,)).fetchone()
     n = (row[0] if row else 0) + 1
     c.execute("INSERT INTO stats VALUES (?,?,?,?) ON CONFLICT(user) DO UPDATE SET count=excluded.count, last_at=excluded.last_at, last_tasks=excluded.last_tasks",
-              (user, n, datetime.datetime.datetime.now(ZoneInfo("Europe/Madrid")).isoformat(), tasks_text[:2000]))
+                            (user, n, datetime.datetime.now(ZoneInfo("Europe/Madrid")).isoformat(), tasks_text[:2000]))
     c.commit(); c.close()
     return n
 
@@ -208,7 +208,7 @@ def admin():
         total_consent = c.execute("SELECT COUNT(*) FROM consent").fetchone()[0]
         row = c.execute("SELECT COUNT(*), COALESCE(SUM(count),0) FROM stats").fetchone()
         total_users, total_trans = row[0], row[1]
-        today = today = datetime.datetime.now(ZoneInfo("Europe/Madrid")).strftime("%Y-%m-%d")
+                today = datetime.datetime.now(ZoneInfo("Europe/Madrid")).strftime("%Y-%m-%d")
         today_users = c.execute("SELECT COUNT(*) FROM stats WHERE last_at LIKE ?", (today + "%",)).fetchone()[0]
         users = c.execute("SELECT user, count, last_at, last_tasks FROM stats ORDER BY last_at DESC LIMIT 50").fetchall()
         c.close()
