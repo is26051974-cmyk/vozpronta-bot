@@ -40,8 +40,18 @@ def db():
     else:
         conn = sqlite3.connect("vozpronta.db", timeout=10)
     conn.execute("CREATE TABLE IF NOT EXISTS consent (user TEXT PRIMARY KEY, created_at TEXT)")
-    conn.execute("CREATE TABLE IF NOT EXISTS stats (user TEXT PRIMARY KEY, count INTEGER DEFAULT 0, last_at TEXT, last_tasks TEXT)")
+    conn.execute("CREATE TABLE IF NOT EXISTS stats (user TEXT PRIMARY KEY, count INTEGER DEFAULT 0, last_at TEXT, last_tasks TEXT, first_seen TEXT, daily_date TEXT, daily_count INTEGER DEFAULT 0)")
     conn.commit()
+    # Миграция для старых юзеров - добавляем колонки, если их нет
+    for col, ddl in [("first_seen", "ALTER TABLE stats ADD COLUMN first_seen TEXT"), ("daily_date", "ALTER TABLE stats ADD COLUMN daily_date TEXT"), ("daily_count", "ALTER TABLE stats ADD COLUMN daily_count INTEGER DEFAULT 0")]:
+        try:
+            conn.execute(ddl)
+        except Exception:
+            pass
+    try:
+        conn.commit()
+    except Exception:
+        pass
     return conn
 
 def has_consent(user):
