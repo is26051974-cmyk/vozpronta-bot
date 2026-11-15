@@ -404,7 +404,7 @@ def webhook():
                 return "OK", 200
             aud = requests.get(info['url'], headers={"Authorization": f"Bearer {TOKEN}"}).content
             with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tf:
-                tf.write(aud); path = tf.name
+                tf.write(aud); tf.flush(); path = tf.name
                 with open(path, 'rb') as f:
                     r = requests.post("https://api.groq.com/openai/v1/audio/transcriptions",
                     headers={"Authorization": f"Bearer {GROQ_KEY}"},
