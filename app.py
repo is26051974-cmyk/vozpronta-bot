@@ -309,7 +309,7 @@ def webhook():
                 PENDING[frm] = "confirm_todo"
                 send("¿Seguro? Si borras TODO perderás tu contador y tu periodo gratis. Escribe SI BORRAR TODO para confirmar, o CANCELAR para dejarlo.")
                 return "OK", 200
-            if up == "SI BORRAR TODO" and PENDING.get(frm) == "confirm_todo":
+            if PENDING.get(frm) == "confirm_todo" and up in ("SI BORRAR TODO", "TODO", "SI", "SÍ", "YES", "2"):
                 PENDING.pop(frm, None)
                 delete_all_data(frm)
                 send("Listo. Borré TODO: tu consentimiento, tu contador y tus últimas tareas.")
