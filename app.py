@@ -42,7 +42,6 @@ def db():
     conn.execute("CREATE TABLE IF NOT EXISTS consent (user TEXT PRIMARY KEY, created_at TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS stats (user TEXT PRIMARY KEY, count INTEGER DEFAULT 0, last_at TEXT, last_tasks TEXT, first_seen TEXT, daily_date TEXT, daily_count INTEGER DEFAULT 0)")
     conn.commit()
-    # Миграция для старых юзеров - добавляем колонки, если их нет
     for col, ddl in [("first_seen", "ALTER TABLE stats ADD COLUMN first_seen TEXT"), ("daily_date", "ALTER TABLE stats ADD COLUMN daily_date TEXT"), ("daily_count", "ALTER TABLE stats ADD COLUMN daily_count INTEGER DEFAULT 0")]:
         try:
             conn.execute(ddl)
@@ -59,7 +58,7 @@ def has_consent(user):
     return bool(r)
 
 def save_consent(user):
-        c = db(); c.execute("INSERT OR REPLACE INTO consent VALUES (?,?)", (user, datetime.datetime.now(ZoneInfo("Europe/Madrid")).isoformat())); c.commit(); c.close()
+    c = db(); c.execute("INSERT OR REPLACE INTO consent VALUES (?,?)", (user, datetime.datetime.now(ZoneInfo("Europe/Madrid")).isoformat())); c.commit(); c.close()
 
 def remove_consent(user):
     c = db(); c.execute("DELETE FROM consent WHERE user=?", (user,)); c.commit(); c.close()
@@ -80,8 +79,7 @@ def bump_counter(user, tasks_text=""):
     old_daily = row[2] or 0
     new_daily = 1 if old_daily_date != today else old_daily + 1
     c.execute("INSERT INTO stats (user, count, last_at, last_tasks, first_seen, daily_date, daily_count) VALUES (?,?,?,?,?,?,?) ON CONFLICT(user) DO UPDATE SET count=excluded.count, last_at=excluded.last_at, last_tasks=excluded.last_tasks, daily_date=excluded.daily_date, daily_count=excluded.daily_count",
-                            (user, n, now.isoformat(), tasks_text[:2000], now.isoformat(), today, new_daily))
-    # Если first_seen пустой - ставим сейчас, чтобы не потерять пробную неделю для старых юзеров
+              (user, n, now.isoformat(), tasks_text[:2000], now.isoformat(), today, new_daily))
     try:
         c.execute("UPDATE stats SET first_seen=? WHERE user=? AND (first_seen IS NULL OR first_seen='')", (now.isoformat(), user))
     except Exception:
@@ -92,6 +90,7 @@ def bump_counter(user, tasks_text=""):
 def get_my_stats(user):
     c = db(); r = c.execute("SELECT count, last_at, last_tasks, first_seen, daily_date, daily_count FROM stats WHERE user=?", (user,)).fetchone(); c.close()
     return r
+
 LIMIT_MSG = (
     "⛔ Has llegado a tu límite gratuito de 5 transcripciones hoy.\n\n"
     "Tu semana gratuita ya terminó.\n"
@@ -106,20 +105,17 @@ def check_limit(user):
     today = now.strftime("%Y-%m-%d")
     row = c.execute("SELECT first_seen, daily_date, daily_count FROM stats WHERE user=?", (user,)).fetchone()
     if not row or not row[0]:
-        # Первый раз - создаём first_seen
         c.execute("INSERT INTO stats (user, count, first_seen, daily_date, daily_count) VALUES (?,?,?, ?,?) ON CONFLICT(user) DO UPDATE SET first_seen=excluded.first_seen, daily_date=excluded.daily_date, daily_count=excluded.daily_count",
                   (user, 0, now.isoformat(), today, 0))
         c.commit(); c.close()
         return (True, 7, 0)
     first_seen = datetime.datetime.fromisoformat(row[0])
-    # Если first_seen был без таймзоны - считаем что это Мадрид
     if first_seen.tzinfo is None:
         first_seen = first_seen.replace(tzinfo=ZoneInfo("Europe/Madrid"))
     days_passed = (now - first_seen).days
     trial_left = max(0, 7 - days_passed)
     daily_date = row[1]
     daily_count = row[2] or 0
-    # Новый день по Мадриду - обнуляем
     if daily_date != today:
         c.execute("UPDATE stats SET daily_date=?, daily_count=0 WHERE user=?", (today, user))
         c.commit()
@@ -127,10 +123,10 @@ def check_limit(user):
     c.close()
     if days_passed < 7:
         return (True, trial_left, daily_count)
-    # После недели - лимит 5 в день
     if daily_count >= 5:
         return (False, 0, daily_count)
     return (True, 0, daily_count)
+
 TASKS_MODEL_PRIMARY = "openai/gpt-oss-120b"
 TASKS_MODEL_FALLBACK = "openai/gpt-oss-20b"
 
@@ -406,15 +402,16 @@ def webhook():
                 return "OK", 200
             send("🎙 VozPronta 10 - ¡Envía un audio de hasta 10 min!\n\nEscribe \"MIS ESTADISTICAS\" para ver tu contador.")
             return "OK", 200
+
         if typ in ("audio", "voice"):
             if not has_consent(frm):
-                    send_consent()
-                    send("⚠ Primero pulsa \"✅ Sí, acepto\" arriba y vuelve a enviar el audio.")
-                    return "OK", 200
+                send_consent()
+                send("⚠ Primero pulsa \"✅ Sí, acepto\" arriba y vuelve a enviar el audio.")
+                return "OK", 200
             allowed, trial_left, daily_n = check_limit(frm)
             if not allowed:
-                    send(LIMIT_MSG)
-                    return "OK", 200
+                send(LIMIT_MSG)
+                return "OK", 200
             aid = m['audio']['id']
             info = requests.get(f"https://graph.facebook.com/v19.0/{aid}", headers={"Authorization": f"Bearer {TOKEN}"}).json()
             if 'url' not in info:
@@ -425,9 +422,9 @@ def webhook():
                 tf.write(aud); tf.flush(); path = tf.name
                 with open(path, 'rb') as f:
                     r = requests.post("https://api.groq.com/openai/v1/audio/transcriptions",
-                    headers={"Authorization": f"Bearer {GROQ_KEY}"},
-                    files={"file": f},
-                    data={"model": "whisper-large-v3"})
+                                      headers={"Authorization": f"Bearer {GROQ_KEY}"},
+                                      files={"file": f},
+                                      data={"model": "whisper-large-v3"})
                 os.unlink(path)
             if r.status_code == 200:
                 text = r.json().get('text', '')
