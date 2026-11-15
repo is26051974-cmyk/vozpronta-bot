@@ -1,5 +1,5 @@
 from flask import Flask, request
-import requests, os, tempfile, sqlite3, datetime, html
+import requests, os, tempfile, sqlite3, datetime, html, libsql
 from zoneinfo import ZoneInfo
 app = Flask(__name__)
 
@@ -29,23 +29,19 @@ CONSENT_TEXT = (
     "¿Aceptas el uso del bot?"
 )
 
+import libsql
+
+TURSO_URL = os.environ.get("TURSO_DATABASE_URL", "")
+TURSO_TOKEN = os.environ.get("TURSO_AUTH_TOKEN", "")
+
 def db():
-    for path in [DB_PATH, "vozpronta.db", "/tmp/vozpronta.db"]:
-        try:
-            d = os.path.dirname(path)
-            if d:
-                os.makedirs(d, exist_ok=True)
-            conn = sqlite3.connect(path, timeout=10)
-            conn.execute("CREATE TABLE IF NOT EXISTS consent (user TEXT PRIMARY KEY, created_at TEXT)")
-            conn.execute("CREATE TABLE IF NOT EXISTS stats (user TEXT PRIMARY KEY, count INTEGER DEFAULT 0, last_at TEXT, last_tasks TEXT)")
-            conn.commit()
-            return conn
-        except Exception as e:
-            print(f"db fallback {path}: {e}")
-            continue
-    conn = sqlite3.connect(":memory:")
+    if TURSO_URL:
+        conn = libsql.connect(database=TURSO_URL, auth_token=TURSO_TOKEN)
+    else:
+        conn = sqlite3.connect("vozpronta.db", timeout=10)
     conn.execute("CREATE TABLE IF NOT EXISTS consent (user TEXT PRIMARY KEY, created_at TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS stats (user TEXT PRIMARY KEY, count INTEGER DEFAULT 0, last_at TEXT, last_tasks TEXT)")
+    conn.commit()
     return conn
 
 def has_consent(user):
