@@ -99,7 +99,7 @@ LIMIT_MSG = (
     "Vuelve mañana para tus 5 gratuitas. 🙏"
 )
 
-def check_limit(user):
+days_passed = (now_mad - fs).days
     """Возвращает (allowed: bool, trial_days_left: int, daily_count: int)"""
     c = db()
     now = datetime.datetime.now(ZoneInfo("Europe/Madrid"))
