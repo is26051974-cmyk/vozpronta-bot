@@ -400,13 +400,13 @@ def webhook():
             aid = m['audio']['id']
             info = requests.get(f"https://graph.facebook.com/v19.0/{aid}", headers={"Authorization": f"Bearer {TOKEN}"}).json()
             if 'url' not in info:
-                    send("❌ Error al descargar el audio")
-                    return "OK", 200
-                aud = requests.get(info['url'], headers={"Authorization": f"Bearer {TOKEN}"}).content
-                with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tf:
+                send("❌ Error al descargar el audio")
+                return "OK", 200
+            aud = requests.get(info['url'], headers={"Authorization": f"Bearer {TOKEN}"}).content
+            with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tf:
                 tf.write(aud); path = tf.name
-            with open(path, 'rb') as f:
-                r = requests.post("https://api.groq.com/openai/v1/audio/transcriptions",
+                with open(path, 'rb') as f:
+                    r = requests.post("https://api.groq.com/openai/v1/audio/transcriptions",
                     headers={"Authorization": f"Bearer {GROQ_KEY}"},
                     files={"file": f},
                     data={"model": "whisper-large-v3"})
