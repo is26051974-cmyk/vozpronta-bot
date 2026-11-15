@@ -208,7 +208,7 @@ def admin():
         total_consent = c.execute("SELECT COUNT(*) FROM consent").fetchone()[0]
         row = c.execute("SELECT COUNT(*), COALESCE(SUM(count),0) FROM stats").fetchone()
         total_users, total_trans = row[0], row[1]
-                today = datetime.datetime.now(ZoneInfo("Europe/Madrid")).strftime("%Y-%m-%d")
+        today = datetime.datetime.now(ZoneInfo("Europe/Madrid")).strftime("%Y-%m-%d")
         today_users = c.execute("SELECT COUNT(*) FROM stats WHERE last_at LIKE ?", (today + "%",)).fetchone()[0]
         users = c.execute("SELECT user, count, last_at, last_tasks FROM stats ORDER BY last_at DESC LIMIT 50").fetchall()
         c.close()
