@@ -99,7 +99,7 @@ LIMIT_MSG = (
     "Vuelve mañana para tus 5 gratuitas. 🙏"
 )
 
-days_passed = (now_mad - fs).days
+def check_limit(user):
     """Возвращает (allowed: bool, trial_days_left: int, daily_count: int)"""
     c = db()
     now = datetime.datetime.now(ZoneInfo("Europe/Madrid"))
@@ -394,7 +394,7 @@ def webhook():
                         fs = datetime.datetime.fromisoformat(first_seen)
                         if fs.tzinfo is None:
                             fs = fs.replace(tzinfo=ZoneInfo("Europe/Madrid"))
-                        days_passed = 10  # TEST - вернуть обратно!
+                        days_passed = (now_mad - fs).days
                         if days_passed < 7:
                             trial_line = f"🎁 Prueba gratuita: quedan {7 - days_passed} días"
                         else:
