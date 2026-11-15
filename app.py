@@ -394,7 +394,7 @@ def webhook():
                     send("⚠ Primero pulsa \"✅ Sí, acepto\" arriba y vuelve a enviar el audio.")
                     return "OK", 200
             allowed, trial_left, daily_n = check_limit(frm)
-                if not allowed:
+            if not allowed:
                     send(LIMIT_MSG)
                     return "OK", 200
                 aid = m['audio']['id']
