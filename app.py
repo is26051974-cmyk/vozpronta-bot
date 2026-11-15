@@ -72,10 +72,20 @@ def delete_all_data(user):
 
 def bump_counter(user, tasks_text=""):
     c = db()
-    row = c.execute("SELECT count FROM stats WHERE user=?", (user,)).fetchone()
+    now = datetime.datetime.now(ZoneInfo("Europe/Madrid"))
+    today = now.strftime("%Y-%m-%d")
+    row = c.execute("SELECT count, daily_date, daily_count FROM stats WHERE user=?", (user,)).fetchone()
     n = (row[0] if row else 0) + 1
-    c.execute("INSERT INTO stats VALUES (?,?,?,?) ON CONFLICT(user) DO UPDATE SET count=excluded.count, last_at=excluded.last_at, last_tasks=excluded.last_tasks",
-                            (user, n, datetime.datetime.now(ZoneInfo("Europe/Madrid")).isoformat(), tasks_text[:2000]))
+    old_daily_date = row[1] if row else None
+    old_daily = row[2] or 0
+    new_daily = 1 if old_daily_date != today else old_daily + 1
+    c.execute("INSERT INTO stats (user, count, last_at, last_tasks, first_seen, daily_date, daily_count) VALUES (?,?,?,?,?,?,?) ON CONFLICT(user) DO UPDATE SET count=excluded.count, last_at=excluded.last_at, last_tasks=excluded.last_tasks, daily_date=excluded.daily_date, daily_count=excluded.daily_count",
+                            (user, n, now.isoformat(), tasks_text[:2000], now.isoformat(), today, new_daily))
+    # Если first_seen пустой - ставим сейчас, чтобы не потерять пробную неделю для старых юзеров
+    try:
+        c.execute("UPDATE stats SET first_seen=? WHERE user=? AND (first_seen IS NULL OR first_seen='')", (now.isoformat(), user))
+    except Exception:
+        pass
     c.commit(); c.close()
     return n
 
