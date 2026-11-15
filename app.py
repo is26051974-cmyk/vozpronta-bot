@@ -394,7 +394,7 @@ def webhook():
                         fs = datetime.datetime.fromisoformat(first_seen)
                         if fs.tzinfo is None:
                             fs = fs.replace(tzinfo=ZoneInfo("Europe/Madrid"))
-                        days_passed = (now_mad - fs).days
+                        days_passed = 10  # TEST - вернуть обратно!
                         if days_passed < 7:
                             trial_line = f"🎁 Prueba gratuita: quedan {7 - days_passed} días"
                         else:
