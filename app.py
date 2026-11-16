@@ -89,7 +89,7 @@ def bump_counter(user, tasks_text=""):
     
         
     
-        pass
+        
     c.commit(); c.close()
     return n
 
