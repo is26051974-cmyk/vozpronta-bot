@@ -79,10 +79,15 @@ def bump_counter(user, tasks_text=""):
     old_daily_date = row[1] if row else None
     old_daily = row[2] or 0
     new_daily = 1 if old_daily_date != today else old_daily + 1
+        if already_used_trial(c, user):
+        _fs = (now - datetime.timedelta(days=8)).isoformat()
+    else:
+        mark_trial_used(c, user, today)
+        _fs = now.isoformat()
     c.execute("INSERT INTO stats (user, count, last_at, last_tasks, first_seen, daily_date, daily_count) VALUES (?,?,?,?,?,?,?) ON CONFLICT(user) DO UPDATE SET count=excluded.count, last_at=excluded.last_at, last_tasks=excluded.last_tasks, daily_date=excluded.daily_date, daily_count=excluded.daily_count",
-              (user, n, now.isoformat(), tasks_text[:2000], now.isoformat(), today, new_daily))
+              (user, n, now.isoformat(), tasks_text[:2000], _fs, today, new_daily))
     try:
-        c.execute("UPDATE stats SET first_seen=? WHERE user=? AND (first_seen IS NULL OR first_seen='')", (now.isoformat(), user))
+        
     except Exception:
         pass
     c.commit(); c.close()
