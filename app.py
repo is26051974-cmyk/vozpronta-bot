@@ -106,9 +106,19 @@ def check_limit(user):
     today = now.strftime("%Y-%m-%d")
     row = c.execute("SELECT first_seen, daily_date, daily_count FROM stats WHERE user=?", (user,)).fetchone()
     if not row or not row[0]:
-        c.execute("INSERT INTO stats (user, count, first_seen, daily_date, daily_count) VALUES (?,?,?, ?,?) ON CONFLICT(user) DO UPDATE SET first_seen=excluded.first_seen, daily_date=excluded.daily_date, daily_count=excluded.daily_count",
-                  (user, 0, now.isoformat(), today, 0))
-        c.commit(); c.close()
+        if already_used_trial(c, user):
+            old = (now - datetime.timedelta(days=8)).isoformat()
+            if not row:
+                c.execute("INSERT INTO stats (user, count, first_seen, daily_date, daily_count) VALUES (?,?,?,?,?)", (user, 0, old, today, 0))
+            else:
+                c.execute("UPDATE stats SET first_seen=? WHERE user=?", (old, user))
+            c.commit(); c.close()
+            return (True, 0, 0)
+        else:
+            mark_trial_used(c, user, today)
+            c.execute("INSERT INTO stats (user, count, first_seen, daily_date, daily_count) VALUES (?,?,?,?,?) ON CONFLICT(user) DO UPDATE SET first_seen=excluded.first_seen", (user, 0, now.isoformat(), today, 0))
+            c.commit(); c.close()
+            return (True, 7, 0)
         return (True, 7, 0)
     first_seen = datetime.datetime.fromisoformat(row[0])
     if first_seen.tzinfo is None:
