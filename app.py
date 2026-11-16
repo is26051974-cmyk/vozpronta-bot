@@ -386,7 +386,14 @@ def webhook():
                     if daily_date != today_mad:
                         daily_count = 0
                     if not first_seen:
-                        trial_line = "🎁 Prueba gratuita: 7 días"
+                        _c = db()
+                        if already_used_trial(_c, frm):
+                            trial_line = "💳 Prueba terminada. Hoy: 0 / 5 gratuitas"
+                        else:
+                            mark_trial_used(_c, frm, today_mad)
+                            _c.commit()
+                            trial_line = "🎁 Prueba gratuita: 7 días"
+                        _c.close()
                     else:
                         fs = datetime.datetime.fromisoformat(first_seen)
                         if fs.tzinfo is None:
