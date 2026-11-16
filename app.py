@@ -79,7 +79,7 @@ def bump_counter(user, tasks_text=""):
     old_daily_date = row[1] if row else None
     old_daily = row[2] or 0
     new_daily = 1 if old_daily_date != today else old_daily + 1
-        if already_used_trial(c, user):
+    if already_used_trial(c, user):
         _fs = (now - datetime.timedelta(days=8)).isoformat()
     else:
         mark_trial_used(c, user, today)
