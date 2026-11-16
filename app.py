@@ -1,8 +1,8 @@
 from flask import Flask, request
 import requests, os, tempfile, sqlite3, datetime, html, libsql
 from zoneinfo import ZoneInfo
+from trial_guard import create_trial_table, already_used_trial, mark_trial_used, hash_phone
 app = Flask(__name__)
-
 PHONE_ID = os.environ.get("PHONE_ID", "1345713805299738")
 TOKEN = os.environ.get("WHATSAPP_TOKEN", "")
 GROQ_KEY = os.environ.get("GROQ_KEY", "")
