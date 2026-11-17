@@ -97,7 +97,7 @@ def get_my_stats(user):
     c = db(); r = c.execute("SELECT count, last_at, last_tasks, first_seen, daily_date, daily_count FROM stats WHERE user=?", (user,)).fetchone(); c.close()
     return r
 
-LIMIT_MSG = """⛔ Has usado tus 5 transcripciones gratuitas de hoy.
+LIMIT_MSG = """Has usado tus 5 transcripciones gratuitas de hoy.
 
 Tu semana gratuita ya termino.
 
@@ -105,7 +105,7 @@ Para seguir sin limites:
 
 1 mes - 4,99 EUR
 
-Pagar con tarjeta / Google Pay: [link]
+Pagar con tarjeta / 【entity-Google Pay¦canonical_name=Google Pay】 / Apple Pay: https://buy.stripe.com/test_7sY5kwgbW1K00pm5EN8bS00
 
 Escribe PAGAR para activar tu suscripcion."""
 
