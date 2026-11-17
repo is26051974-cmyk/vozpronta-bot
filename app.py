@@ -107,8 +107,6 @@ Para seguir sin limites:
 
 Pagar con tarjeta / Google Pay: [link]
 
-Pagar con Bizum: [numero]
-
 Escribe PAGAR para activar tu suscripcion."""
 
 def check_limit(user):
