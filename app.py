@@ -105,7 +105,7 @@ Para seguir sin limites:
 
 1 mes - 4,99 EUR
 
-Pagar con tarjeta / 【entity-Google Pay¦canonical_name=Google Pay】 / Apple Pay: https://buy.stripe.com/test_7sY5kwgbW1K00pm5EN8bS00
+Pagar con tarjeta / Google Pay / Apple Pay: https://buy.stripe.com/test_7sY5kwgbW1K00pm5EN8bS00
 
 Escribe PAGAR para activar tu suscripcion."""
 
