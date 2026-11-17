@@ -98,10 +98,13 @@ def get_my_stats(user):
     return r
 
 LIMIT_MSG = (
-    "⛔ Has llegado a tu límite gratuito de 5 transcripciones hoy.\n\n"
-    "Tu semana gratuita ya terminó.\n"
-    "Muy pronto podrás seguir con Bizum, tarjeta o Google Pay.\n\n"
-    "Vuelve mañana para tus 5 gratuitas. 🙏"
+    "⛔ Has usado tus 5 transcripciones gratuitas de hoy.
+    Tu semana gratuita ya terminó.
+    💎 Para seguir sin límites:
+    1 mes — 4,99€
+    👉 Pagar con tarjeta / Google Pay: [ссылка]
+    👉 Pagar con Bizum: [номер]
+    Escribe PAGAR para activar tu suscripción."
 )
 
 def check_limit(user):
