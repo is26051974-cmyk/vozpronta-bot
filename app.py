@@ -97,15 +97,19 @@ def get_my_stats(user):
     c = db(); r = c.execute("SELECT count, last_at, last_tasks, first_seen, daily_date, daily_count FROM stats WHERE user=?", (user,)).fetchone(); c.close()
     return r
 
-LIMIT_MSG = (
-    "⛔ Has usado tus 5 transcripciones gratuitas de hoy.
-    Tu semana gratuita ya terminó.
-    💎 Para seguir sin límites:
-    1 mes — 4,99€
-    👉 Pagar con tarjeta / Google Pay: [ссылка]
-    👉 Pagar con Bizum: [номер]
-    Escribe PAGAR para activar tu suscripción."
-)
+LIMIT_MSG = """⛔ Has usado tus 5 transcripciones gratuitas de hoy.
+
+Tu semana gratuita ya termino.
+
+Para seguir sin limites:
+
+1 mes - 4,99 EUR
+
+Pagar con tarjeta / Google Pay: [link]
+
+Pagar con Bizum: [numero]
+
+Escribe PAGAR para activar tu suscripcion."""
 
 def check_limit(user):
     """Возвращает (allowed: bool, trial_days_left: int, daily_count: int)"""
