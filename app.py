@@ -394,6 +394,17 @@ def webhook():
                 remove_consent(frm)
                 send("❌ Consentimiento retirado. Ya no procesaré tus audios.\nTus datos se pueden borrar por completo escribiendo BORRAR.\nEscribe \"Hola\" para volver a aceptar.")
                 return "OK", 200
+                            if up == "PAGAR":
+                send("Gracias por tu pago!\n\nPara activar tu suscripcion, escribe el email con el que pagaste en 【entity-SumUp¦canonical_name=SumUp】.\n\nEjemplo: tu@email.com\n\nLo reviso y te activo el acceso sin limites.")
+                return "OK", 200
+            if "@" in txt and "." in txt and len(txt) < 100:
+                # Юзер прислал email после PAGAR - сохраняем для проверки
+                _c = db()
+                _c.execute("CREATE TABLE IF NOT EXISTS paid_users (user TEXT PRIMARY KEY, email TEXT, paid_until TEXT)")
+                _c.execute("INSERT OR REPLACE INTO paid_users (user, email, paid_until) VALUES (?,?,?)", (frm, txt.lower().strip(), "PENDING"))
+                _c.commit(); _c.close()
+                send("Recibido! Estoy verificando tu pago en SumUp.\nSi el pago esta confirmado, te activo en unas horas y te aviso aqui.")
+                return "OK", 200
             if up in ("MIS ESTADISTICAS", "MIS ESTADÍSTICAS", "ESTADISTICAS", "ESTADÍSTICAS", "MI CONTADOR", "STATS"):
                 row = get_my_stats(frm)
                 if not row:
@@ -468,7 +479,47 @@ def webhook():
     except Exception as e:
         print(e)
     return "OK", 200
+# --- SumUp ---
+import requests as _req2
+SUMUP_CLIENT_ID = os.environ.get("SUMUP_CLIENT_ID", "")
+SUMUP_CLIENT_SECRET = os.environ.get("SUMUP_CLIENT_SECRET", "")
+SUMUP_MERCHANT = os.environ.get("SUMUP_MERCHANT_CODE", "M196F01Y")
 
+@app.route('/【entity-sumup¦canonical_name=SumUp】-callback')
+def sumup_callback():
+    code = request.args.get("code", "")
+    print(f"【entity-SUMUP¦canonical_name=SumUp】 CALLBACK CODE: {code}", flush=True)
+    if not code:
+        return "No code", 400
+    # Меняем code на токен
+    try:
+        r = _req2.post("https://api.sumup.com/token", json={
+            "grant_type": "authorization_code",
+            "client_id": SUMUP_CLIENT_ID,
+            "client_secret": SUMUP_CLIENT_SECRET,
+            "code": code,
+            "redirect_uri": f"{PUBLIC_URL}"
+        }, timeout=15)
+        print(f"SUMUP TOKEN: {r.status_code} {r.text[:500]}", flush=True)
+        data = r.json()
+        if "access_token" in data:
+            # Сохраняем токен в память / в базу - для теста просто логируем
+            # В проде - сохранять в Turso
+            print("SUMUP CONNECTED OK", flush=True)
+            return "SumUp conectado! Puedes cerrar esta ventana y volver a WhatsApp.", 200
+    except Exception as e:
+        print(f"sumup callback error: {e}", flush=True)
+    return "SumUp callback recibido, revisa logs", 200
+
+@app.route('/sumup-webhook', methods=['POST'])
+def sumup_webhook():
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        print(f"SUMUP WEBHOOK: {data}", flush=True)
+        return "OK", 200
+    except Exception as e:
+        print(f"webhook error: {e}", flush=True)
+        return "OK", 200
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
