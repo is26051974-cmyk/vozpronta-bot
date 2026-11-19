@@ -14,7 +14,7 @@ CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "sichgroupinvest@gmail.com")
 ADMIN_KEY = os.environ.get("ADMIN_KEY", "")
 SUMUP_TOKEN = os.environ.get("SUMUP_API_KEY", "")
 SUMUP_MERCHANT = os.environ.get("SUMUP_MERCHANT_CODE", "M196F01Y")
-SUMUP_AMOUNT = float(os.environ.get("SUMUP_AMOUNT", "1.00"))
+SUMUP_AMOUNT = float(os.environ.get("SUMUP_AMOUNT", "4.99"))
 WHATSAPP_PRIVACY_URL = "https://www.whatsapp.com/legal/privacy-policy"
 
 CONSENT_TEXT = (
@@ -104,7 +104,7 @@ def create_sumup_checkout(user_phone):
     link = os.environ.get("SUMUP_PAYMENT_LINK", "")
     if link:
         return link
-    return "https://pay.sumup.com/p/s/QGDAS16Y"
+    return "https://pay.sumup.com/p/s/XHKBFCSDLX"
 
 def is_paid(user):
     c = db()
