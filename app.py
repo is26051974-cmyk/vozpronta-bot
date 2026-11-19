@@ -14,7 +14,7 @@ CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "sichgroupinvest@gmail.com")
 ADMIN_KEY = os.environ.get("ADMIN_KEY", "")
 SUMUP_TOKEN = os.environ.get("SUMUP_API_KEY", "")
 SUMUP_MERCHANT = os.environ.get("SUMUP_MERCHANT_CODE", "M196F01Y")
-SUMUP_AMOUNT = float(os.environ.get("SUMUP_AMOUNT", "4.99"))
+SUMUP_AMOUNT = float(os.environ.get("SUMUP_AMOUNT", "1.00"))
 WHATSAPP_PRIVACY_URL = "https://www.whatsapp.com/legal/privacy-policy"
 
 CONSENT_TEXT = (
