@@ -101,32 +101,10 @@ def get_my_stats(user):
     return r
 
 def create_sumup_checkout(user_phone):
-    """Создаёт личную ссылку для этого номера. Возвращает URL или None."""
-    if not SUMUP_TOKEN:
-        print("[SUMUP] no token", flush=True)
-        return None
-    try:
-        r = requests.post(
-            f"https://api.sumup.com/v0.1/merchants/{SUMUP_MERCHANT}/checkouts",
-            headers={"Authorization": f"Bearer {SUMUP_TOKEN}", "Content-Type": "application/json"},
-            json={
-                "checkout_reference": user_phone,
-                "amount": SUMUP_AMOUNT,
-                "currency": "EUR",
-                "merchant_code": SUMUP_MERCHANT,
-                "description": "VozPronta 10 - 1 mes sin limites",
-            },
-            timeout=15
-        )
-        print(f"[SUMUP] checkout {user_phone}: {r.status_code} {r.text[:500]}", flush=True)
-        if r.status_code in (200, 201):
-            data = r.json()
-            cid = data.get("id")
-            if cid:
-                return f"https://pay.sumup.com/b2c/{cid}"
-    except Exception as e:
-        print(f"[SUMUP] checkout error: {e}", flush=True)
-    return None
+    link = os.environ.get("SUMUP_PAYMENT_LINK", "")
+    if link:
+        return link
+    return "https://pay.sumup.com/p/s/XHKBFCSDLX"
 
 def is_paid(user):
     c = db()
