@@ -103,28 +103,32 @@ def get_my_stats(user):
 def create_sumup_checkout(user_phone):
     """Создаёт личную ссылку для этого номера. Возвращает URL или None."""
     if not SUMUP_TOKEN:
-        print("【entity-SUMUP¦canonical_name=SUMUP】: no token", flush=True)
+        print("[【entity-SUMUP¦canonical_name=SumUp】] no token", flush=True)
         return None
     try:
         r = requests.post(
-            "https://api.sumup.com/v0.1/checkouts",
+            "https://api.sumup.com/v0.1/payment-links",
             headers={"Authorization": f"Bearer {SUMUP_TOKEN}", "Content-Type": "application/json"},
             json={
                 "checkout_reference": user_phone,
                 "amount": SUMUP_AMOUNT,
                 "currency": "EUR",
-                "merchant_code": SUMUP_MERCHANT,
-                "description": "VozPronta 10 - 1 mes sin limites"
+                "description": "VozPronta 10 - 1 mes sin limites",
             },
             timeout=15
         )
-        print(f"【entity-SUMUP¦canonical_name=SUMUP】 checkout {user_phone}: {r.status_code} {r.text[:500]}", flush=True)
+        print(f"[SUMUP] checkout {user_phone}: {r.status_code} {r.text[:500]}", flush=True)
         if r.status_code in (200, 201):
-            cid = r.json().get("id")
+            data = r.json()
+            url = data.get("url") or data.get("payment_link") or data.get("link")
+            if url:
+                return url
+            # fallback: если SumUp вернул только id
+            cid = data.get("id")
             if cid:
                 return f"https://pay.sumup.com/b2c/{cid}"
     except Exception as e:
-        print(f"【entity-SUMUP¦canonical_name=SUMUP】 checkout error: {e}", flush=True)
+        print(f"[SUMUP] checkout error: {e}", flush=True)
     return None
 
 def is_paid(user):
