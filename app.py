@@ -107,7 +107,7 @@ def create_sumup_checkout(user_phone):
         return None
     try:
         r = requests.post(
-            "https://api.sumup.com/v0.1/payment-links",
+            f"https://api.sumup.com/v0.1/merchants/{SUMUP_MERCHANT_CODE}/payment-links",,
             headers={"Authorization": f"Bearer {SUMUP_TOKEN}", "Content-Type": "application/json"},
             json={
                 "checkout_reference": user_phone,
