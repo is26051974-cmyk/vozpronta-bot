@@ -410,7 +410,12 @@ def webhook():
             up = txt.upper()
 
             PENDING = globals().setdefault("PENDING_BORRAR", {})
-
+            if up == "PAGAR":
+                if is_paid(frm):
+                    send("✅ Tu suscripcion ya esta activa.\nEnvia un audio y te lo transcribo sin limites.")
+                else:
+                    send("⏳ Aun no veo tu pago.\n\nSi ya pagaste por tu link personal, espera 1-2 minutos y escribe PAGAR otra vez.\nSi no pagaste, envia un audio para que te de tu link personal de pago.")
+                return "OK", 200
             if up in ("BORRAR", "BORRAR MIS DATOS", "ELIMINAR MIS DATOS", "DELETE"):
                 PENDING[frm] = "menu"
                 send("¿Qué quieres borrar?\n\n1. Escribe BORRAR CHAT - solo borro este chat\n2. Escribe BORRAR TODO - borro TODO\n\nEscribe 1 o 2, o CANCELAR")
