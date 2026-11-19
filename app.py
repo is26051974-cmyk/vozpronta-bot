@@ -104,7 +104,7 @@ def create_sumup_checkout(user_phone):
     link = os.environ.get("SUMUP_PAYMENT_LINK", "")
     if link:
         return link
-    return "https://pay.sumup.com/p/s/XHKBFCSDLX"
+    return "https://pay.sumup.com/p/s/QGDAS16Y"
 
 def is_paid(user):
     c = db()
