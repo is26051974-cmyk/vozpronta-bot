@@ -571,15 +571,6 @@ def sumup_callback():
 def sumup_webhook():
     try:
         data = request.get_json(force=True, silent=True) or {}
-        print(f"SUMUP WEBHOOK: {data}", flush=True)
-        return "OK", 200
-    except Exception as e:
-        print(f"webhook error: {e}", flush=True)
-        return "OK", 200
-@app.route('/sumup-webhook', methods=['POST'])
-def sumup_webhook():
-    try:
-        data = request.get_json(force=True, silent=True) or {}
         print(f" SUMUP WEBHOOK: {data}", flush=True)
         ref = data.get("checkout_reference") or data.get("reference") or ""
         status = str(data.get("status") or data.get("payload", {}).get("status") or "").upper()
