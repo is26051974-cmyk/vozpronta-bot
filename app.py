@@ -185,6 +185,8 @@ def check_limit(user):
         c.commit()
         daily_count = 0
     c.close()
+    if is_paid(user):
+        return (True, 0, 0)
     if days_passed < 7:
         return (True, trial_left, daily_count)
     if daily_count >= 5:
@@ -497,8 +499,15 @@ def webhook():
                 return "OK", 200
             allowed, trial_left, daily_n = check_limit(frm)
             if not allowed:
-                send(LIMIT_MSG)
-                return "OK", 200
+                if is_paid(frm):
+                    pass
+                else:
+                    link = create_sumup_checkout(frm)
+                    if link:
+                        send(f"Has usado tus 5 transcripciones gratuitas de hoy.\n\nTu semana gratuita ya termino.\n\nPara seguir sin limites:\n\n1 mes - {SUMUP_AMOUNT:.2f} EUR\n\nPagar con tarjeta / Google Pay / Apple Pay:\n{link}\n\nDespues de pagar, escribe PAGAR para comprobar tu suscripcion.")
+                    else:
+                        send("Has usado tus 5 transcripciones gratuitas de hoy.\n\nHubo un error al generar tu link de pago. Escribe PAGAR en 1 minuto.")
+                    return "OK", 200
             aid = m['audio']['id']
             info = requests.get(f"https://graph.facebook.com/v19.0/{aid}", headers={"Authorization": f"Bearer {TOKEN}"}).json()
             if 'url' not in info:
