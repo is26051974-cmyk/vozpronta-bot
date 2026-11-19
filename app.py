@@ -100,8 +100,6 @@ def get_my_stats(user):
     c = db(); r = c.execute("SELECT count, last_at, last_tasks, first_seen, daily_date, daily_count FROM stats WHERE user=?", (user,)).fetchone(); c.close()
     return r
 
-LIMIT_MSG = """Has usado tus 5 transcripciones gratuitas de hoy.
-
 def create_sumup_checkout(user_phone):
     """Создаёт личную ссылку для этого номера. Возвращает URL или None."""
     if not SUMUP_TOKEN:
