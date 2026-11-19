@@ -416,7 +416,25 @@ def webhook():
                 if is_paid(frm):
                     send("✅ Tu suscripcion ya esta activa.\nEnvia un audio y te lo transcribo sin limites.")
                 else:
-                    send("⏳ Aun no veo tu pago.\n\nSi ya pagaste por tu link personal, espera 1-2 minutos y escribe PAGAR otra vez.\nSi no pagaste, envia un audio para que te de tu link personal de pago.")
+                    # Проверяем в 【entity-SumUp¦canonical_name=SumUp】, не оплатил ли уже
+                    try:
+                        import requests as _rq
+                        _h = {"Authorization": f"Bearer {SUMUP_API_KEY}"}
+                        _r = _rq.get(f"https://api.sumup.com/v0.1/checkouts?checkout_reference={frm}", headers=_h, timeout=10)
+                        _paid = False
+                        if _r.status_code == 200:
+                            for _it in _r.json().get("items", []):
+                                if str(_it.get("status","")).upper() in ("PAID","SUCCESS","COMPLETE"):
+                                    _paid = True
+                                    break
+                        if _paid:
+                            activate_paid(frm, days=30)
+                            send("✅ Pago recibido! Tu suscripcion esta activada por 30 dias.\n\nEnvia un audio y te lo transcribo sin limites.")
+                        else:
+                            send("⏳ Aun no veo tu pago.\n\nSi ya pagaste, espera 1 minuto y escribe PAGAR otra vez.\nSi no pagaste, envia un audio para que te de tu link personal de pago.")
+                    except Exception as e:
+                        print(f" PAGAR check error: {e}", flush=True)
+                        send("⏳ Aun no veo tu pago. Espera 1 minuto y escribe PAGAR otra vez.")
                 return "OK", 200
             if up in ("BORRAR", "BORRAR MIS DATOS", "ELIMINAR MIS DATOS", "DELETE"):
                 PENDING[frm] = "menu"
