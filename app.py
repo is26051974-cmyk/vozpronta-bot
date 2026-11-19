@@ -12,6 +12,9 @@ PUBLIC_URL = os.environ.get("PUBLIC_URL", "https://vozpronta-bot.onrender.com").
 PRIVACY_URL = os.environ.get("PRIVACY_URL", f"{PUBLIC_URL}/privacidad")
 CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "sichgroupinvest@gmail.com")
 ADMIN_KEY = os.environ.get("ADMIN_KEY", "")
+SUMUP_TOKEN = os.environ.get("SUMUP_API_KEY", "")
+SUMUP_MERCHANT = os.environ.get("SUMUP_MERCHANT_CODE", "M196F01Y")
+SUMUP_AMOUNT = float(os.environ.get("SUMUP_AMOUNT", "4.99"))
 WHATSAPP_PRIVACY_URL = "https://www.whatsapp.com/legal/privacy-policy"
 
 CONSENT_TEXT = (
