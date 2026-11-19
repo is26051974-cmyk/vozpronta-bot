@@ -102,16 +102,57 @@ def get_my_stats(user):
 
 LIMIT_MSG = """Has usado tus 5 transcripciones gratuitas de hoy.
 
-Tu semana gratuita ya termino.
+def create_sumup_checkout(user_phone):
+    """Создаёт личную ссылку для этого номера. Возвращает URL или None."""
+    if not SUMUP_TOKEN:
+        print("【entity-SUMUP¦canonical_name=SUMUP】: no token", flush=True)
+        return None
+    try:
+        r = requests.post(
+            "https://api.sumup.com/v0.1/checkouts",
+            headers={"Authorization": f"Bearer {SUMUP_TOKEN}", "Content-Type": "application/json"},
+            json={
+                "checkout_reference": user_phone,
+                "amount": SUMUP_AMOUNT,
+                "currency": "EUR",
+                "merchant_code": SUMUP_MERCHANT,
+                "description": "VozPronta 10 - 1 mes sin limites"
+            },
+            timeout=15
+        )
+        print(f"【entity-SUMUP¦canonical_name=SUMUP】 checkout {user_phone}: {r.status_code} {r.text[:500]}", flush=True)
+        if r.status_code in (200, 201):
+            cid = r.json().get("id")
+            if cid:
+                return f"https://pay.sumup.com/b2c/{cid}"
+    except Exception as e:
+        print(f"【entity-SUMUP¦canonical_name=SUMUP】 checkout error: {e}", flush=True)
+    return None
 
-Para seguir sin limites:
+def is_paid(user):
+    c = db()
+    try:
+        c.execute("CREATE TABLE IF NOT EXISTS paid_users (user TEXT PRIMARY KEY, paid_until TEXT)")
+        row = c.execute("SELECT paid_until FROM paid_users WHERE user=?", (user,)).fetchone()
+        if not row or not row[0]:
+            return False
+        until = datetime.datetime.fromisoformat(row[0])
+        now = datetime.datetime.now(ZoneInfo("Europe/Madrid"))
+        if until.tzinfo is None:
+            until = until.replace(tzinfo=ZoneInfo("Europe/Madrid"))
+        return until > now
+    except Exception:
+        return False
+    finally:
+        c.close()
 
-TEST - 1,00 EUR
-
-Pagar con tarjeta / Google Pay / Apple Pay:
-https://pay.sumup.com/p/s/X6YDM4ZH9O
-
-Escribe PAGAR para activar tu suscripcion."""
+def activate_paid(user, days=30):
+    c = db()
+    c.execute("CREATE TABLE IF NOT EXISTS paid_users (user TEXT PRIMARY KEY, paid_until TEXT)")
+    until = (datetime.datetime.now(ZoneInfo("Europe/Madrid")) + datetime.timedelta(days=days)).isoformat()
+    c.execute("INSERT OR REPLACE INTO paid_users (user, paid_until) VALUES (?,?)", (user, until))
+    c.commit(); c.close()
+    return until
 
 def check_limit(user):
     """Возвращает (allowed: bool, trial_days_left: int, daily_count: int)"""
