@@ -394,7 +394,7 @@ def webhook():
                 remove_consent(frm)
                 send("❌ Consentimiento retirado. Ya no procesaré tus audios.\nTus datos se pueden borrar por completo escribiendo BORRAR.\nEscribe \"Hola\" para volver a aceptar.")
                 return "OK", 200
-                            if up == "PAGAR":
+            if up == "PAGAR":
                 send("Gracias por tu pago!\n\nPara activar tu suscripcion, escribe el email con el que pagaste en 【entity-SumUp¦canonical_name=SumUp】.\n\nEjemplo: tu@email.com\n\nLo reviso y te activo el acceso sin limites.")
                 return "OK", 200
             if "@" in txt and "." in txt and len(txt) < 100:
