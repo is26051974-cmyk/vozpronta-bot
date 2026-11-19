@@ -576,6 +576,29 @@ def sumup_webhook():
     except Exception as e:
         print(f"webhook error: {e}", flush=True)
         return "OK", 200
+@app.route('/sumup-webhook', methods=['POST'])
+def sumup_webhook():
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        print(f" SUMUP WEBHOOK: {data}", flush=True)
+        ref = data.get("checkout_reference") or data.get("reference") or ""
+        status = str(data.get("status") or data.get("payload", {}).get("status") or "").upper()
+        if ref and ("PAID" in status or "SUCCESS" in status or "COMPLETE" in status or status == ""):
+            until = activate_paid(ref, days=30)
+            print(f" SUMUP ACTIVATED {ref} until {until}", flush=True)
+            try:
+                url = f"https://graph.facebook.com/v19.0/{PHONE_ID}/messages"
+                requests.post(url, headers={"Authorization": f"Bearer {TOKEN}"}, json={
+                    "messaging_product": "whatsapp", "to": ref,
+                    "text": {"body": "✅ Pago recibido! Tu suscripcion esta activada por 30 dias.\n\nEnvia un audio y te lo transcribo sin limites."}
+                }, timeout=10)
+            except Exception as e:
+                print(f" notify paid error: {e}", flush=True)
+        return "OK", 200
+    except Exception as e:
+        print(f" sumup webhook error: {e}", flush=True)
+        return "OK", 200
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
