@@ -458,15 +458,15 @@ def webhook():
                 else:
                     # Проверяем в 【entity-SumUp¦canonical_name=SumUp】, не оплатил ли уже
                     tx_id = check_sumup_payment(frm)
-         if tx_id:
-    c = db()
-    c.execute("INSERT OR IGNORE INTO paid_tx (tx_id, phone, paid_at) VALUES (?, ?, ?)", (tx_id, frm, datetime.datetime.now(datetime.timezone.utc).isoformat()))
-    c.commit()
-    c.close()
-    activate_paid(frm, days=30)
-    send("✅ Pago recibido! Tu suscripcion esta activada por 30 dias.\n\nEnvia un audio y te lo transcribo sin limites.")
-else:
-    send("⌛ Aun no veo tu pago.\n\nSi ya pagaste, espera 1 minuto y escribe PAGAR otra vez.\n\nSi aun no pagaste:\nhttps://pay.sumup.com/p/s/XHKBFCSDLX")
+             if tx_id:
+        c = db()
+        c.execute("INSERT OR IGNORE INTO paid_tx (tx_id, phone, paid_at) VALUES (?, ?, ?)", (tx_id, frm, datetime.datetime.now(datetime.timezone.utc).isoformat()))
+        c.commit()
+        c.close()
+        activate_paid(frm, days=30)
+        send("✅ Pago recibido! Tu suscripcion esta activada por 30 dias.\n\nEnvia un audio y te lo transcribo sin limites.")
+    else:
+        send("⌛ Aun no veo tu pago.\n\nSi ya pagaste, espera 1 minuto y escribe PAGAR otra vez.\n\nSi aun no pagaste:\nhttps://pay.sumup.com/p/s/XHKBFCSDLX")
                 return "OK", 200
             if up in ("BORRAR", "BORRAR MIS DATOS", "ELIMINAR MIS DATOS", "DELETE"):
                 PENDING[frm] = "menu"
