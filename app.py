@@ -131,7 +131,67 @@ def activate_paid(user, days=30):
     c.execute("INSERT OR REPLACE INTO paid_users (user, paid_until) VALUES (?,?)", (user, until))
     c.commit(); c.close()
     return until
+def check_sumup_payment(user):
+    """Ищет свежую неиспользованную оплату 4.99 в SumUp. Возвращает код транзакции или None."""
+    import requests
+    import datetime
 
+    token = os.environ.get("SUMUP_API_KEY") or os.environ.get("SUMUP_TOKEN") or ""
+    if not token:
+        print("[SUMUP] no token", flush=True)
+        return None
+
+    try:
+        r = requests.get(
+            "https://api.sumup.com/v0.1/me/transactions/history",
+            headers={"Authorization": f"Bearer {token}"},
+            params={"limit": 20},
+            timeout=10,
+        )
+        print(f"[SUMUP] history {r.status_code}", flush=True)
+        if r.status_code != 200:
+            print(f"[SUMUP] history body: {r.text[:300]}", flush=True)
+            return None
+
+        data = r.json()
+        items = data.get("items", []) if isinstance(data, dict) else data
+        now = datetime.datetime.now(datetime.timezone.utc)
+
+        for tx in items:
+            amount = tx.get("amount", 0)
+            status = str(tx.get("status", "")).upper()
+            tx_id = str(tx.get("transaction_code") or tx.get("id") or tx.get("transaction_id") or "")
+            ts = tx.get("timestamp") or tx.get("created_at") or ""
+
+            if not tx_id:
+                continue
+            if amount != 499:
+                continue
+            if status not in ("SUCCESSFUL", "SUCCESS", "PAID", "COMPLETE", "COMPLETED"):
+                continue
+
+            try:
+                tx_time = datetime.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+                if now - tx_time > datetime.timedelta(minutes=60):
+                    continue
+            except Exception:
+                pass
+
+            c = db()
+            row = c.execute("SELECT tx_id FROM paid_tx WHERE tx_id = ?", (tx_id,)).fetchone()
+            c.close()
+            if row:
+                print(f"[SUMUP] tx {tx_id} already used", flush=True)
+                continue
+
+            print(f"[SUMUP] tx {tx_id} fresh", flush=True)
+            return tx_id
+
+        return None
+
+    except Exception as e:
+        print(f"[SUMUP] check error: {e}", flush=True)
+        return None
 def check_limit(user):
     """Возвращает (allowed: bool, trial_days_left: int, daily_count: int)"""
     c = db()
