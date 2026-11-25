@@ -262,7 +262,39 @@ def _call_tasks_model(model, text):
     if r.status_code != 200:
         return ""
     return (r.json().get("choices", [{}])[0].get("message", {}).get("content", "") or "").strip()
+TASKS_PROMPT = (
+    "Eres un asistente de secretaria. A partir de la transcripcion de un audio en espanol, "
+    "extrae solo las tareas concretas, pendientes, compromisos o acciones que se deben hacer. "
+    "Responde SIEMPRE en el mismo idioma del audio. No traduzcas. "
+    "Reglas: 1) Cada tarea en una linea con '- '. 2) Sin numeros, sin titulos, sin comentarios. "
+    "3) Solo tareas, sin opiniones. 4) Si no hay tareas, responde EXACTAMENTE: 'Sin tareas concretas.'"
+)
 
+def extract_tasks(text):
+    if not GROQ_KEY or not text.strip():
+        return ""
+    out = ""
+    for model in (TASKS_MODEL_PRIMARY, TASKS_MODEL_FALLBACK):
+        try:
+            r = requests.post("https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {GROQ_KEY}", "Content-Type": "application/json"},
+                json={
+                    "model": model,
+                    "temperature": 0.0,
+                    "max_tokens": 600,
+                    "messages": [
+                        {"role": "system", "content": TASKS_PROMPT},
+                        {"role": "user", "content": text[:6000]}
+                    ]},
+                timeout=30)
+            if r.status_code == 200:
+                out = (r.json().get("choices", [{}])[0].get("message", {}).get("content", "") or "").strip()
+                if out:
+                    break
+        except Exception as e:
+            print(f"tasks error {model}: {e}", flush=True)
+            continue
+    return out
 DATOS_PROMPT = (
     "Eres un extractor de datos. Extrae SOLO lo que esta literalmente en el texto. "
     "Responde SIEMPRE en el mismo idioma del texto. No traduzcas. "
