@@ -263,8 +263,7 @@ def _call_tasks_model(model, text):
         return ""
     return (r.json().get("choices", [{}])[0].get("message", {}).get("content", "") or "").strip()
 
-def extract_tasks(text):
-    DATOS_PROMPT = (
+DATOS_PROMPT = (
     "Eres un extractor de datos. Extrae SOLO lo que esta literalmente en el texto. "
     "Responde SIEMPRE en el mismo idioma del texto. No traduzcas. "
     "Busca solo: fecha, hora, importe / dinero, telefono, IBAN / cuenta, direccion, codigo, nombre de persona si va con dato. "
@@ -276,7 +275,6 @@ def extract_tasks(text):
     "5) Si NO hay ningun dato, responde EXACTAMENTE: 'SIN_DATOS'. "
     "6) Maximo 8 datos, los mas importantes primero."
 )
-
 def extract_datos(text):
     if not GROQ_KEY or not text.strip():
         return ""
