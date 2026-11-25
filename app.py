@@ -264,6 +264,51 @@ def _call_tasks_model(model, text):
     return (r.json().get("choices", [{}])[0].get("message", {}).get("content", "") or "").strip()
 
 def extract_tasks(text):
+    DATOS_PROMPT = (
+    "Eres un extractor de datos. Extrae SOLO lo que esta literalmente en el texto. "
+    "Responde SIEMPRE en el mismo idioma del texto. No traduzcas. "
+    "Busca solo: fecha, hora, importe / dinero, telefono, IBAN / cuenta, direccion, codigo, nombre de persona si va con dato. "
+    "Reglas estrictas: "
+    "1) NUNCA inventes, no completes, no redondees, no corrijas. "
+    "2) Copia TAL CUAL como esta en el texto. Si dice 'veinticinco' escribe 'veinticinco', no '25'. "
+    "3) Si un dato esta incompleto o dudoso, pon [?] al final. "
+    "4) Cada dato en una linea: '- `VALOR` - tipo'. Ejemplo: '- `10:00` - hora'. "
+    "5) Si NO hay ningun dato, responde EXACTAMENTE: 'SIN_DATOS'. "
+    "6) Maximo 8 datos, los mas importantes primero."
+)
+
+def extract_datos(text):
+    if not GROQ_KEY or not text.strip():
+        return ""
+    out = ""
+    for model in (TASKS_MODEL_PRIMARY, TASKS_MODEL_FALLBACK):
+        try:
+            r = requests.post("https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {GROQ_KEY}", "Content-Type": "application/json"},
+                json={
+                    "model": model,
+                    "temperature": 0.0,
+                    "max_tokens": 300,
+                    "messages": [
+                        {"role": "system", "content": DATOS_PROMPT},
+                        {"role": "user", "content": text[:6000]}
+                    ]},
+                timeout=30)
+            if r.status_code == 200:
+                out = (r.json().get("choices", [{}])[0].get("message", {}).get("content", "") or "").strip()
+                if out:
+                    break
+        except Exception as e:
+            print(f"datos error {model}: {e}", flush=True)
+            continue
+    if not out or "SIN_DATOS" in out.upper():
+        return ""
+    lines = []
+    for line in out.splitlines():
+        line = line.strip()
+        if line.startswith("- "):
+            lines.append(line)
+    return "\n".join(lines[:8])
     if not GROQ_KEY or not text.strip():
         return "- Sin tareas concretas."
     out = ""
@@ -531,7 +576,7 @@ def webhook():
             if not has_consent(frm):
                 send_consent()
                 return "OK", 200
-            send("🎙 VozPronta 10 - ¡Envía un audio de hasta 10 min!\n\nEscribe \"MIS ESTADISTICAS\" para ver tu contador.")
+            send("🎙 Estoy aquí! Reenvíame ese audio que te da pereza escuchar y te lo dejo clarito en 10 segundos.\n\nEscribe \"MIS ESTADISTICAS\" para ver tu contador.")
             return "OK", 200
 
         if typ in ("audio", "voice"):
@@ -567,9 +612,21 @@ def webhook():
             if r.status_code == 200:
                 text = r.json().get('text', '')
                 tasks = extract_tasks(text)
+                datos = extract_datos(text)
                 n = bump_counter(frm, tasks)
-                msg = f"✅ Transcripción:\n\n{text}"
+                palabras = len(text.split())
+                ahorrado = max(1, round(palabras / 150))
+                # Тон "Ухо" - как друг, а не робот
+                if len(text) > 400:
+                    intro = "Uff, este audio era un rollo 😅 Te lo dejé clarito, mira:"
+                else:
+                    intro = "Listo, ya lo tienes 👇"
+                msg = f"{intro}\n\n{text}"
+                if datos:
+                    msg += f"\n\n⚡ Datos clave:\n{datos}"
                 msg += f"\n\n📋 Tareas:\n{tasks or '- Sin tareas concretas.'}"
+                msg += f"\n\n⏱ Te ahorré ~{ahorrado} min de escucha."
+ 
                 msg += f"\n\n📊 Esta es tu transcripción #{n}."
                 send(msg[:3900])
             else:
