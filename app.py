@@ -1,6 +1,5 @@
 from flask import Flask, request
 import requests, os, tempfile, sqlite3, datetime, html, libsql
-from concurrent.futures import ThreadPoolExecutor
 from zoneinfo import ZoneInfo
 from trial_guard import create_trial_table, already_used_trial, mark_trial_used, hash_phone
 app = Flask(__name__)
@@ -643,11 +642,8 @@ def webhook():
             if r.status_code == 200:
                 text = r.json().get('text', '')
 
-with ThreadPoolExecutor(max_workers=2) as ex:
-    f_tasks = ex.submit(extract_tasks, text)
-    f_datos = ex.submit(extract_datos, text)
-    tasks = f_tasks.result()
-    datos = f_datos.result()
+tasks = extract_tasks(text)
+datos = extract_datos(text)
 def bump_counter(frm, tasks, minutos=0):
     # Поддерживаем старый формат, где был просто int
     cur = COUNTERS.get(frm, {"n": 0, "minutos": 0})
