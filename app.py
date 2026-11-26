@@ -158,8 +158,7 @@ def check_sumup_payment(user):
 
             if not tx_id:
                 continue
-                        if not tx_id:
-                continue
+        
             try:
                 amt = float(amount)
                 amt_cents = int(round(amt * 100)) if amt < 100 else int(amt)
