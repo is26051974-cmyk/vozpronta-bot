@@ -588,7 +588,9 @@ def webhook():
                     daily_count = row[5] or 0
                     if daily_date != today_mad:
                         daily_count = 0
-                    if not first_seen:
+                    if is_paid(frm):
+                        trial_line = "✅ Suscripción activa · sin límites"
+                    elif not first_seen:
                         _c = db()
                         if already_used_trial(_c, frm):
                             trial_line = "💳 Prueba terminada. Hoy: 0 / 5 gratuitas"
