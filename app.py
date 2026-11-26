@@ -606,7 +606,7 @@ def webhook():
                             trial_line = f"🎁 Prueba gratuita: quedan {7 - days_passed} días"
                         else:
                             trial_line = f"📅 Prueba terminada. Hoy: {daily_count} / 5 gratuitas"
-                            send(f"📊 Tus estadísticas:\n• Transcripciones: {row[0]}\n• Última: {row[1][:16] if row[1] else '-'}\n• {trial_line}\n• ⏱ En total te ahorré ~{row[6]} min de escucha.\n\n📋 Últimas tareas:\n{row[2] or '• Sin tareas concretas.'}")
+                    send(f"📊 Tus estadísticas:\n• Transcripciones: {row[0]}\n• Última: {row[1][:16] if row[1] else '-'}\n• {trial_line}\n• ⏱ En total te ahorré ~{row[6]} min de escucha.\n\n📋 Últimas tareas:\n{row[2] or '• Sin tareas concretas.'}")
                 return "OK", 200
             if not has_consent(frm):
                 send_consent()
