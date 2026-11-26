@@ -40,7 +40,7 @@ def db():
     conn.execute("CREATE TABLE IF NOT EXISTS paid_tx (tx_id TEXT PRIMARY KEY, phone TEXT, paid_at TEXT)")
     create_trial_table(conn)
     conn.commit()
-    for col, ddl in [("first_seen", "ALTER TABLE stats ADD COLUMN first_seen TEXT"), ("daily_date", "ALTER TABLE stats ADD COLUMN daily_date TEXT"), ("daily_count", "ALTER TABLE stats ADD COLUMN daily_count INTEGER DEFAULT 0")]:
+    for col, ddl in [("first_seen", "ALTER TABLE stats ADD COLUMN first_seen TEXT"), ("daily_date", "ALTER TABLE stats ADD COLUMN daily_date TEXT"), ("daily_count", "ALTER TABLE stats ADD COLUMN daily_count INTEGER DEFAULT 0", ("minutos", "ALTER TABLE stats ADD COLUMN minutos INTEGER DEFAULT 0"))]:
         try:
             conn.execute(ddl)
         except Exception:
