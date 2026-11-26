@@ -476,15 +476,7 @@ def verify():
     return "ok", 200
 
 @app.route('/webhook', methods=['POST'])
-def bump_counter(frm, tasks, minutos=0):
-    # Поддерживаем старый формат, где был просто int
-    cur = COUNTERS.get(frm, {"n": 0, "minutos": 0})
-    if isinstance(cur, int):
-        cur = {"n": cur, "minutos": 0}
-    cur["n"] += 1
-    cur["minutos"] += minutos
-    COUNTERS[frm] = cur
-    return cur["n"], cur["minutos"]
+def webhook():
 def webhook():
     try:
         data = request.get_json(force=True, silent=True) or {}
