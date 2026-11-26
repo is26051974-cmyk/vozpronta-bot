@@ -641,9 +641,21 @@ def webhook():
                 os.unlink(path)
             if r.status_code == 200:
                 text = r.json().get('text', '')
-                tasks = extract_tasks(text)
-                datos = extract_datos(text)
-                n = bump_counter(frm, tasks)
+from concurrent.futures import ThreadPoolExecutor
+with ThreadPoolExecutor(max_workers=2) as ex:
+    f_tasks = ex.submit(extract_tasks, text)
+    f_datos = ex.submit(extract_datos, text)
+    tasks = f_tasks.result()
+    datos = f_datos.result()
+def bump_counter(frm, tasks, minutos=0):
+    # Поддерживаем старый формат, где был просто int
+    cur = COUNTERS.get(frm, {"n": 0, "minutos": 0})
+    if isinstance(cur, int):
+        cur = {"n": cur, "minutos": 0}
+    cur["n"] += 1
+    cur["minutos"] += minutos
+    COUNTERS[frm] = cur
+    return cur["n"], cur["minutos"]
                 palabras = len(text.split())
                 ahorrado = max(1, round(palabras / 150))
                 # Тон "Ухо" - как друг, а не робот
