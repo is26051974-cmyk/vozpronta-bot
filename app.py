@@ -476,7 +476,7 @@ def verify():
     return "ok", 200
 
 @app.route('/webhook', methods=['POST'])
-def webhook():
+
 def webhook():
     try:
         data = request.get_json(force=True, silent=True) or {}
