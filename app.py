@@ -652,7 +652,7 @@ def webhook():
 
                 palabras = len(text.split())
                 ahorrado = max(1, round(palabras / 150))
-                n = bump_counter(frm, tasks)
+                n, total_min = bump_counter(frm, tasks, ahorrado)
                 # Тон "Ухо" - как друг, а не робот
                 if len(text) > 400:
                     intro = "Uff, este audio era un rollo 😅 Te lo dejé clarito, mira:"
