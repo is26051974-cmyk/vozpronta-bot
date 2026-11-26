@@ -82,8 +82,8 @@ def bump_counter(user, tasks_text="", minutos=0):
     else:
         mark_trial_used(c, user, today)
         _fs = now.isoformat()
-    c.execute("INSERT INTO stats (user, count, last_at, last_tasks, first_seen, daily_date, daily_count) VALUES (?,?,?,?,?,?,?) ON CONFLICT(user) DO UPDATE SET count=excluded.count, last_at=excluded.last_at, last_tasks=excluded.last_tasks, daily_date=excluded.daily_date, daily_count=excluded.daily_count",
-              (user, n, now.isoformat(), tasks_text[:2000], _fs, today, new_daily))
+    c.execute("INSERT INTO stats (user, count, last_at, last_tasks, first_seen, daily_date, daily_count, minutos) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(user) DO UPDATE SET count=excluded.count, last_at=excluded.last_at, last_tasks=excluded.last_tasks, daily_date=excluded.daily_date, daily_count=excluded.daily_count, minutos=excluded.minutos",
+          (user, n, now.isoformat(), tasks_text[:2000], _fs, today, new_daily, total_min))
     
         
     
