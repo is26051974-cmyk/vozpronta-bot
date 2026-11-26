@@ -160,7 +160,6 @@ def check_sumup_payment(user):
                 continue
                         if not tx_id:
                 continue
-            # SumUp может вернуть 4.99 или 499 — приводим к центам
             try:
                 amt = float(amount)
                 amt_cents = int(round(amt * 100)) if amt < 100 else int(amt)
@@ -170,21 +169,18 @@ def check_sumup_payment(user):
                 continue
             if status not in ("SUCCESSFUL", "SUCCESS", "PAID", "COMPLETE", "COMPLETED"):
                 continue
-
             try:
                 tx_time = datetime.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
                 if now - tx_time > datetime.timedelta(days=7):
                     continue
             except Exception:
                 pass
-
             c = db()
             row = c.execute("SELECT tx_id FROM paid_tx WHERE tx_id = ?", (tx_id,)).fetchone()
             c.close()
             if row:
                 print(f"[SUMUP] tx {tx_id} already used", flush=True)
                 continue
-
             print(f"[SUMUP] tx {tx_id} fresh", flush=True)
             return tx_id
 
