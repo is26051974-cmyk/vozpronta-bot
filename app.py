@@ -67,12 +67,13 @@ def delete_all_data(user):
     c.execute("DELETE FROM stats WHERE user=?", (user,))
     c.commit(); c.close()
 
-def bump_counter(user, tasks_text=""):
+def bump_counter(user, tasks_text="", minutos=0):
     c = db()
     now = datetime.datetime.now(ZoneInfo("Europe/Madrid"))
     today = now.strftime("%Y-%m-%d")
-    row = c.execute("SELECT count, daily_date, daily_count FROM stats WHERE user=?", (user,)).fetchone()
+    row = c.execute("SELECT count, daily_date, daily_count, COALESCE(minutos,0) FROM stats WHERE user=?", (user,)).fetchone()
     n = (row[0] if row else 0) + 1
+    total_min = (row[3] if row else 0) + (minutos or 0)
     old_daily_date = row[1] if row else None
     old_daily = row[2] or 0
     new_daily = 1 if old_daily_date != today else old_daily + 1
@@ -88,7 +89,7 @@ def bump_counter(user, tasks_text=""):
     
         
     c.commit(); c.close()
-    return n
+    return n, total_min
 
 def get_my_stats(user):
     c = db(); r = c.execute("SELECT count, last_at, last_tasks, first_seen, daily_date, daily_count FROM stats WHERE user=?", (user,)).fetchone(); c.close()
