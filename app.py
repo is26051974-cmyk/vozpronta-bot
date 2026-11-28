@@ -15,6 +15,8 @@ ADMIN_KEY = os.environ.get("ADMIN_KEY", "")
 SUMUP_TOKEN = os.environ.get("SUMUP_API_KEY", "")
 SUMUP_MERCHANT = os.environ.get("SUMUP_MERCHANT_CODE", "M196F01Y")
 SUMUP_AMOUNT = float(os.environ.get("SUMUP_AMOUNT", "4.99"))
+PAY_LINK = os.environ.get("PAY_LINK", "")
+ADMIN_PHONE = os.environ.get("ADMIN_PHONE", "")
 WHATSAPP_PRIVACY_URL = "https://www.whatsapp.com/legal/privacy-policy"
 
 CONSENT_TEXT = (
@@ -498,6 +500,50 @@ def webhook():
             r = requests.post(url, headers=h, json=payload)
             print(f"SEND to {frm}: {r.status_code} {r.text[:500]}", flush=True)
             return r
+            # --- БЛОК: ОПЛАТА ЧЕРЕЗ КНОПКУ, БЕЗ ГОЛОЙ ССЫЛКИ ---
+def send_paywall(to, user_lang="es"):
+    texts = {
+        "es": {
+            "title": "Prueba gratuita terminada",
+            "body": "Tu prueba de 7 días ha terminado.\n\nSigue con transcripciones ilimitadas, traducción y respuestas listas por solo 4,99 €/mes. Cancela cuando quieras.",
+            "button": "Suscribirse - 4,99 €"
+        },
+        "ru": {
+            "title": "Пробный период закончился",
+            "body": "Твои 7 бесплатных дней закончились.\n\nПродолжай с безлимитными расшифровками, переводом и готовыми ответами всего за 4,99 €/мес. Отмена в любой момент.",
+            "button": "Оформить - 4,99 €"
+        },
+        "uk": {
+            "title": "Пробний період закінчився",
+            "body": "Твої 7 безкоштовних днів закінчилися.\n\nПродовжуй з безлімітними розшифровками, перекладом і готовими відповідями всього за 4,99 €/міс. Скасування в будь-який момент.",
+            "button": "Оформити - 4,99 €"
+        }
+    }
+    t = texts.get(user_lang, texts["es"])
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "interactive",
+        "interactive": {
+            "type": "cta_url",
+            "body": {"text": f"*{t['title']}*\n\n{t['body']}"},
+            "action": {
+                "name": "cta_url",
+                "parameters": {"display_text": t["button"], "url": PAY_LINK}
+            }
+        }
+    }
+    try:
+        requests.post(
+            f"https://graph.facebook.com/v21.0/{PHONE_ID}/messages",
+            headers={"Authorization": f"Bearer {WHATSAPP_TOKEN}", "Content-Type": "application/json"},
+            json=payload,
+            timeout=15
+        )
+    except Exception as e:
+        print(f"send_paywall error: {e}", flush=True)
+
+def send_consent():
         def send(t):
             return send_payload({"messaging_product": "whatsapp", "to": frm, "text": {"body": t}})
         def send_consent():
@@ -523,7 +569,11 @@ def webhook():
             txt = m['text']['body'].strip()
             print(f"TEXT from {frm}: {txt}", flush=True)
             up = txt.upper()
+        if up == "TEST_PAYWALL" and frm == ADMIN_PHONE:
+            send_paywall(frm, "ru")
+            return "OK", 200
 
+        if up == "PAGAR":
             PENDING = globals().setdefault("PENDING_BORRAR", {})
             if up == "PAGAR":
                 if is_paid(frm):
